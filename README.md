@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # SmartChat AI Platform
 
 A production-style AI chatbot platform built using **Rasa**, **FastAPI**, **PostgreSQL**, **Docker Compose**, and **Nginx**.
