@@ -1,0 +1,37 @@
+body {
+    font-family:
+        Arial, sans-serif;
+    background: #f5f7fb;
+}
+.files-container {
+    width: 90%;
+    margin: auto;
+}
+.files-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+}
+button {
+    padding: 10px 18px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+}
+.upload-section {
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+table {
+    width: 100%;
+    background: white;
+    border-collapse: collapse;
+}
+th,
+td {
+    padding: 12px;
+    border-bottom: 1px solid #ddd;
+}

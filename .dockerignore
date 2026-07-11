@@ -1,0 +1,23 @@
+# Ignore local Python virtual environments
+venv/
+.env
+
+# Ignore Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Ignore Git metadata
+.git/
+.gitignore
+
+# Ignore OS/editor junk
+.DS_Store
+Thumbs.db
+
+# Optional: ignore logs and temp files
+*.log
+*.tmp
+

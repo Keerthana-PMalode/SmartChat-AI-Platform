@@ -1,0 +1,69 @@
+.env
+__pycache__/
+*.pyc
+logs/
+node_modules/
+
+.env
+
+__pycache__/
+*.pyc
+
+logs/
+
+node_modules/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# User Configuration
+.config/
+.keras/
+
+# Node
+node_modules/
+
+# Docker
+docker-compose.override.yml
+
+# Local Databases
+*.db
+*.sqlite3
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Shell history
+**/.bash_history
+
+# Backup files
+*.bak
+
+# Ignore all Rasa trained models
+rasa/models/*.tar.gz
+
+# Keep the current trained model
+!rasa/models/20260630-023129-magnetic-cathedral.tar.gz
+
+# Uploaded files
+file_service/uploads/

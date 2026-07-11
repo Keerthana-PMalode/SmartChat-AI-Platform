@@ -1,0 +1,28 @@
+version: "3.1"
+
+rules:
+
+- rule: Say goodbye anytime the user says goodbye
+  steps:
+  - intent: goodbye
+  - action: utter_goodbye
+
+- rule: Say 'I am a bot' anytime the user challenges
+  steps:
+  - intent: bot_challenge
+  - action: utter_iamabot
+
+- rule: Respond to mood_great with custom action
+  steps:
+  - intent: mood_great
+  - action: action_respond_mood_great
+
+- rule: Respond to inform_work with custom action
+  steps:
+  - intent: inform_work
+  - action: action_respond_inform_work
+
+- rule: answer working hours
+  steps:
+    - intent: faq_working_hours
+    - action: utter_faq_working_hours
