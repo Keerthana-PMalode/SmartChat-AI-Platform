@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # SmartChat AI Platform
 
 A production-style AI chatbot platform built using **Rasa**, **FastAPI**, **PostgreSQL**, **Docker Compose**, and **Nginx**.
@@ -126,83 +125,126 @@ Authenticated and guest conversations are stored efficiently using either a regi
 
 ---
 
-# Screenshots
-
-## Login
-
-![Login](docs/images/login-page.png)
-
----
-
-## Chatbot
-
-<!--
-TODO: Re-enable the login page screenshot once it's updated.
-![Chatbot](docs/images/chatbot-ui.png)
--->
-
----
-
-## Admin Dashboard
-
-<!--
-TODO: Re-enable the login page screenshot once it's updated.
-![Admin](docs/images/admin-dashboard.png)
--->
-
----
-
-## File Manager
-
-<!--
-TODO: Re-enable the login page screenshot once it's updated.
-![Files](docs/images/file-management.png)
--->
-
----
-
 # Getting Started
 
-## Clone Repository
+---
+
+# Docker Setup
+
+Before starting the application, ensure that Docker and Docker Compose are installed and running on your system. This project is designed to run entirely inside Docker containers using **Docker Compose**.
+
+> **Note**
+>
+> This project is fully containerized using **Docker Compose**. All Python dependencies are installed and executed inside their respective Docker containers. A local Python virtual environment (`venv`) is **not required** to build or run the application.
+>
+> To get started:
+> 1. Configure the `.env` file.
+> 2. Create the required Docker volumes.
+> 3. Build and start the services using Docker Compose.
+>
+> This approach ensures a consistent development and deployment environment across Windows, Linux, and macOS.
+
+## Prerequisites
+
+- Docker Desktop (Windows/macOS) or Docker Engine (Linux)
+- Docker Compose (included with Docker Desktop)
+- Git
+
+Verify the installation:
+
+```bash
+docker --version
+docker compose version
+```
+
+## Clone the Repository
 
 ```bash
 git clone https://github.com/Keerthana-PMalode/SmartChat-AI-Platform.git
 cd SmartChat-AI-Platform
 ```
 
----
+## Configure Environment Variables
 
-## Configure Environment
+Create an environment file by copying the example configuration:
 
-Copy
-
-```
-.env.example
+```bash
+cp .env.example .env
 ```
 
-to
+or on Windows:
 
-```
-.env
-```
-
-Update
-
-```
-DATABASE_URL
-SECRET_KEY
-POSTGRES_USER
-POSTGRES_PASSWORD
-POSTGRES_DB
+```powershell
+copy .env.example .env
 ```
 
----
+Update the following values as required:
 
-## Start Containers
+```text
+DATABASE_URL=postgresql://chatbot:chatbot@postgres:5432/chatbot
+SECRET_KEY=change_this_to_a_long_random_secret
+
+POSTGRES_HOST=postgres
+POSTGRES_PORT=5432
+POSTGRES_USER=chatbot
+POSTGRES_PASSWORD=chatbot
+POSTGRES_DB=chatbot
+```
+
+> **Important:** Do not commit your `.env` file to GitHub. Only commit `.env.example`.
+
+## Create Docker Volumes
+
+The project uses persistent Docker volumes for PostgreSQL data and Rasa trained models.
+
+Create them before starting the application:
+
+```bash
+docker volume create chatbot-project_postgres_data
+docker volume create chatbot-project_rasa_models
+```
+
+Verify that the volumes exist:
+
+```bash
+docker volume ls
+```
+
+## Build and Start Containers
+
+Build and start all services using Docker Compose:
 
 ```bash
 docker compose up --build
 ```
+This command:
+- Builds custom service images
+- Pulls required base images from Docker Hub
+- Creates containers
+- Creates the Docker network
+- Starts all application services
+
+## Stop Containers
+
+Stop the running services:
+
+```bash
+docker compose down
+```
+This removes containers and the Docker Compose network. Docker volumes are preserved, so PostgreSQL data and Rasa models remain available.
+
+## Verify Running Containers
+
+```bash
+docker ps
+```
+Expected containers:
+- chatbot-project-nginx-1
+- chatbot-project-rasa-1
+- chatbot-project-rasa_sdk-1
+- chatbot-project-file_service-1
+- chatbot-project-auth-1
+- chatbot-project-postgres-1
 
 ---
 
@@ -214,8 +256,6 @@ docker compose up --build
 | Auth API | http://localhost:8000 |
 | File API | http://localhost:8001 |
 | Rasa API | http://localhost:5006 |
-
----
 
 ---
 
@@ -238,8 +278,6 @@ http://localhost:8081/login.html
 ```
 
 The login page should be displayed successfully.
-
----
 
 ## Authorization Service
 
@@ -273,8 +311,6 @@ From the Swagger UI, you can test endpoints such as:
 - User Administration
 - Chat History APIs
 
----
-
 ## File Service
 
 Verify the File Service by opening:
@@ -305,8 +341,6 @@ You can test:
 - Permission Management
 - Audit APIs
 
----
-
 ## Rasa Server
 
 Verify the Rasa server by opening:
@@ -322,8 +356,6 @@ http://localhost:5006/version
 ```
 
 The `/version` endpoint returns the installed Rasa version, confirming that the conversational AI server is operational.
-
----
 
 ## Running Containers
 
@@ -345,6 +377,41 @@ A successful deployment should show containers similar to:
 See the deployment screenshot below.
 
 ![Docker Containers](docs/images/docker-ps.png)
+
+---
+
+# Screenshots
+
+## Login
+
+![Login](docs/images/login-page.png)
+
+---
+
+## Chatbot
+
+<!--
+TODO: Re-enable the login page screenshot once it's updated.
+![Chatbot](docs/images/chatbot-ui.png)
+-->
+
+---
+
+## Admin Dashboard
+
+<!--
+TODO: Re-enable the login page screenshot once it's updated.
+![Admin](docs/images/admin-dashboard.png)
+-->
+
+---
+
+## File Manager
+
+<!--
+TODO: Re-enable the login page screenshot once it's updated.
+![Files](docs/images/file-management.png)
+-->
 
 ---
 

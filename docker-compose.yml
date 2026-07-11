@@ -2,7 +2,6 @@ services:
 
   postgres:
     image: postgres:16
-    container_name: postgres
 
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -28,8 +27,6 @@ services:
       context: ./auth_service
       dockerfile: Dockerfile
 
-    container_name: auth_service
-
     env_file:
       - ./.env
 
@@ -52,8 +49,6 @@ services:
     build:
       context: ./file_service
       dockerfile: Dockerfile
-
-    container_name: file_service
 
     env_file:
       - ./.env
@@ -79,8 +74,6 @@ services:
     build:
       context: ./rasa_sdk
       dockerfile: Dockerfile
-
-    container_name: rasa_sdk
 
     env_file:
       - ./.env
@@ -114,8 +107,6 @@ services:
       context: ./rasa
       dockerfile: Dockerfile
 
-    container_name: rasa_server
-
     env_file:
       - ./.env
 
@@ -146,8 +137,6 @@ services:
 
   nginx:
     image: nginx:latest
-
-    container_name: rasa_nginx
 
     ports:
       - "8081:80"
