@@ -390,28 +390,19 @@ See the deployment screenshot below.
 
 ## Chatbot
 
-<!--
-TODO: Re-enable the login page screenshot once it's updated.
 ![Chatbot](docs/images/chatbot-ui.png)
--->
 
 ---
 
 ## Admin Dashboard
 
-<!--
-TODO: Re-enable the login page screenshot once it's updated.
 ![Admin](docs/images/admin-dashboard.png)
--->
 
 ---
 
 ## File Manager
 
-<!--
-TODO: Re-enable the login page screenshot once it's updated.
 ![Files](docs/images/file-management.png)
--->
 
 ---
 

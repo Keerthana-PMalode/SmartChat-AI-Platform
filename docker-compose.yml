@@ -70,7 +70,7 @@ services:
     networks:
       - chatbot_network
 
-  rasa-sdk:
+  rasa_sdk:
     build:
       context: ./rasa_sdk
       dockerfile: Dockerfile
@@ -127,7 +127,7 @@ services:
       -p 5006
 
     depends_on:
-      - rasa-sdk
+      - rasa_sdk
 
     restart: unless-stopped
 
