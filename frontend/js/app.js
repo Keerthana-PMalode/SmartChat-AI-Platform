@@ -1,310 +1,155 @@
 document.addEventListener("DOMContentLoaded", () => {
+  /* ================= AUTH CHECK ================= */
 
+  const role = localStorage.getItem("role");
+  const token = localStorage.getItem("authToken");
 
-    /* ================= AUTH CHECK ================= */
+  if (!token || role !== "user") {
+    localStorage.clear();
 
-    const role = localStorage.getItem("role");
-    const token = localStorage.getItem("authToken");
+    window.location.href = "login.html";
 
+    return;
+  }
 
-    if (!token || role !== "user") {
+  const chatBody = document.getElementById("chatBody");
+  const input = document.getElementById("message");
+  const button = document.getElementById("sendBtn");
+  const typingIndicator = document.getElementById("typingIndicator");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const filesBtn = document.getElementById("filesBtn");
 
-        localStorage.clear();
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", logout);
+  }
 
-        window.location.href = "login.html";
+  if (filesBtn) {
+    filesBtn.addEventListener("click", () => {
+      window.location.href = "files.html";
+    });
+  }
 
-        return;
+  if (button) {
+    button.addEventListener("click", sendMessage);
+  }
 
+  if (input) {
+    input.addEventListener("keypress", function (e) {
+      if (e.key === "Enter") {
+        sendMessage();
+      }
+    });
+  }
+
+  /* ================= TYPING INDICATOR ================= */
+
+  function showTyping() {
+    if (typingIndicator) {
+      typingIndicator.classList.remove("hidden");
+    }
+  }
+
+  function hideTyping() {
+    if (typingIndicator) {
+      typingIndicator.classList.add("hidden");
+    }
+  }
+
+  /* ================= SEND MESSAGE ================= */
+
+  async function sendMessage() {
+    const message = input.value.trim();
+
+    if (message === "") {
+      return;
     }
 
+    appendUser(message);
 
+    input.value = "";
 
-    const chatBody = document.getElementById("chatBody");
-    const input = document.getElementById("message");
-    const button = document.getElementById("sendBtn");
-    const typingIndicator = document.getElementById("typingIndicator");
-    const logoutBtn = document.getElementById("logoutBtn");
-    const filesBtn = document.getElementById("filesBtn");
+    showTyping();
 
+    try {
+      const response = await fetch("/rasa/webhooks/rest/webhook", {
+        method: "POST",
 
-    if (logoutBtn) {
+        headers: {
+          "Content-Type": "application/json",
 
-        logoutBtn.addEventListener(
-            "click",
-            logout
-        );
+          Authorization: "Bearer " + localStorage.getItem("authToken"),
+        },
 
-    }
+        body: JSON.stringify({
+          sender: localStorage.getItem("username"),
 
-    if (filesBtn) {
+          message: message,
 
-        filesBtn.addEventListener(
-            "click",
-            () => {
+          metadata: {
+            Authorization: "Bearer " + localStorage.getItem("authToken"),
+          },
+        }),
+      });
 
-                window.location.href =
-                    "files.html";
+      if (!response.ok) {
+        throw new Error("Bot API failed");
+      }
 
-            }
-        );
+      const data = await response.json();
 
-    }
+      hideTyping();
 
+      if (data.length > 0) {
+        for (const msg of data) {
+          if (!msg.text) {
+            continue;
+          }
 
+          appendBot(msg.text);
+          await fetch("/auth/chat/history", {
+            method: "POST",
 
-    if (button) {
+            headers: {
+              "Content-Type": "application/json",
 
-        button.addEventListener(
-            "click",
-            sendMessage
-        );
+              Authorization: "Bearer " + localStorage.getItem("authToken"),
+            },
 
-    }
+            body: JSON.stringify({
+              session_id: localStorage.getItem("username"),
 
+              sender: "user",
 
+              message: message,
 
-    if (input) {
-
-        input.addEventListener(
-            "keypress",
-            function (e) {
-
-                if (e.key === "Enter") {
-
-                    sendMessage();
-
-                }
-
-            }
-        );
-
-    }
-
-
-
-    /* ================= TYPING INDICATOR ================= */
-
-
-    function showTyping() {
-
-        if (typingIndicator) {
-
-            typingIndicator.classList.remove("hidden");
-
+              response: msg.text,
+            }),
+          });
         }
+      } else {
+        appendBot("No response from bot.");
+      }
+    } catch (error) {
+      console.error("Chat error:", error);
 
+      hideTyping();
+
+      appendBot("Unable to connect to server.");
     }
+  }
 
+  /* ================= USER MESSAGE ================= */
 
+  function appendUser(message) {
+    const wrapper = document.createElement("div");
 
-    function hideTyping() {
+    wrapper.className = "user-message";
 
-        if (typingIndicator) {
+    const bubble = document.createElement("div");
 
-            typingIndicator.classList.add("hidden");
+    bubble.className = "bubble";
 
-        }
-
-    }
-
-
-
-
-    /* ================= SEND MESSAGE ================= */
-
-
-    async function sendMessage() {
-
-
-        const message =
-            input.value.trim();
-
-
-
-        if (message === "") {
-
-            return;
-
-        }
-
-
-
-        appendUser(message);
-
-
-        input.value = "";
-
-
-
-        showTyping();
-
-
-
-        try {
-
-
-            const response =
-                await fetch(
-                    "/rasa/webhooks/rest/webhook",
-                    {
-
-                        method: "POST",
-
-                        headers: {
-
-                            "Content-Type": "application/json",
-
-                            "Authorization": "Bearer " + localStorage.getItem("authToken")
-
-                        },
-
-                        body: JSON.stringify({
-
-                            sender:
-                                localStorage.getItem("username"),
-
-                            message:
-                                message,
-
-                            metadata: {
-
-                                Authorization:
-                                    "Bearer " + localStorage.getItem("authToken")
-
-                            }
-
-                        })
-
-                    }
-                );
-
-
-
-            if (!response.ok) {
-
-                throw new Error(
-                    "Bot API failed"
-                );
-
-            }
-
-
-
-            const data =
-                await response.json();
-
-
-
-            hideTyping();
-
-
-
-            if (data.length > 0) {
-
-
-                for (const msg of data) {
-
-                    if (!msg.text) {
-                        continue;
-                    }
-
-                    appendBot(msg.text);
-                    await fetch("/auth/chat/history", {
-
-                        method: "POST",
-
-                        headers: {
-
-                            "Content-Type": "application/json",
-
-                            "Authorization":
-                                "Bearer " + localStorage.getItem("authToken")
-
-                        },
-
-                        body: JSON.stringify({
-
-                            session_id:
-                                localStorage.getItem("username"),
-
-                            sender:
-                                "user",
-
-                            message:
-                                message,
-
-                            response:
-                                msg.text
-
-                        })
-
-                    });
-
-                }
-            }
-            else {
-
-
-                appendBot(
-                    "No response from bot."
-                );
-
-
-            }
-
-
-
-        }
-        catch (error) {
-
-
-            console.error(
-                "Chat error:",
-                error
-            );
-
-
-            hideTyping();
-
-
-            appendBot(
-                "Unable to connect to server."
-            );
-
-
-        }
-
-
-    }
-
-
-
-
-    /* ================= USER MESSAGE ================= */
-
-
-    function appendUser(message) {
-
-
-        const wrapper =
-            document.createElement("div");
-
-
-        wrapper.className =
-            "user-message";
-
-
-
-        const bubble =
-            document.createElement("div");
-
-
-        bubble.className =
-            "bubble";
-
-
-
-        bubble.innerHTML = `
+    bubble.innerHTML = `
 
             ${message}
 
@@ -314,212 +159,88 @@ document.addEventListener("DOMContentLoaded", () => {
 
         `;
 
+    wrapper.appendChild(bubble);
 
+    chatBody.appendChild(wrapper);
 
-        wrapper.appendChild(bubble);
+    scrollBottom();
+  }
 
+  /* ================= BOT MESSAGE ================= */
 
-        chatBody.appendChild(wrapper);
+  function appendBot(message) {
+    const wrapper = document.createElement("div");
 
+    wrapper.className = "bot-message";
 
+    const bubble = document.createElement("div");
 
-        scrollBottom();
+    bubble.className = "bubble";
 
+    wrapper.appendChild(bubble);
 
+    chatBody.appendChild(wrapper);
+
+    scrollBottom();
+
+    simulateTyping(bubble, message);
+  }
+
+  /* ================= TYPING ANIMATION ================= */
+
+  async function simulateTyping(element, message) {
+    element.innerHTML = "";
+
+    const words = message.split(" ");
+
+    for (let i = 0; i < words.length; i++) {
+      element.innerHTML += words[i] + " ";
+
+      scrollBottom();
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, 120 + Math.random() * 80),
+      );
     }
 
-
-
-
-    /* ================= BOT MESSAGE ================= */
-
-
-    function appendBot(message) {
-
-
-        const wrapper =
-            document.createElement("div");
-
-
-        wrapper.className =
-            "bot-message";
-
-
-
-        const bubble =
-            document.createElement("div");
-
-
-        bubble.className =
-            "bubble";
-
-
-
-        wrapper.appendChild(bubble);
-
-
-        chatBody.appendChild(wrapper);
-
-
-
-        scrollBottom();
-
-
-
-        simulateTyping(
-            bubble,
-            message
-        );
-
-
-    }
-
-
-
-
-    /* ================= TYPING ANIMATION ================= */
-
-
-    async function simulateTyping(
-        element,
-        message
-    ) {
-
-
-        element.innerHTML = "";
-
-
-
-        const words =
-            message.split(" ");
-
-
-
-        for (
-            let i = 0;
-            i < words.length;
-            i++
-        ) {
-
-
-            element.innerHTML +=
-                words[i] + " ";
-
-
-
-            scrollBottom();
-
-
-
-            await new Promise(
-                resolve =>
-                    setTimeout(
-                        resolve,
-                        120 + Math.random() * 80
-                    )
-            );
-
-
-        }
-
-
-
-        element.innerHTML += `
+    element.innerHTML += `
 
             <div class="timestamp">
                 ${getTime()}
             </div>
 
         `;
+  }
 
+  /* ================= SCROLL ================= */
 
-    }
+  function scrollBottom() {
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
 
+  /* ================= TIME ================= */
 
+  function getTime() {
+    const now = new Date();
 
+    let hours = now.getHours();
 
+    let minutes = now.getMinutes();
 
-    /* ================= SCROLL ================= */
+    minutes = minutes < 10 ? "0" + minutes : minutes;
 
-
-    function scrollBottom() {
-
-
-        chatBody.scrollTop =
-            chatBody.scrollHeight;
-
-
-    }
-
-
-
-
-
-    /* ================= TIME ================= */
-
-
-    function getTime() {
-
-
-        const now =
-            new Date();
-
-
-
-        let hours =
-            now.getHours();
-
-
-
-        let minutes =
-            now.getMinutes();
-
-
-
-        minutes =
-            minutes < 10
-                ? "0" + minutes
-                : minutes;
-
-
-
-        return `${hours}:${minutes}`;
-
-
-    }
-
-
-
-
+    return `${hours}:${minutes}`;
+  }
 });
-
-
-
-
 
 /* ================= LOGOUT ================= */
 
-
 function logout() {
+  localStorage.removeItem("authToken");
 
+  localStorage.removeItem("username");
 
-    localStorage.removeItem(
-        "authToken"
-    );
+  localStorage.removeItem("role");
 
-
-    localStorage.removeItem(
-        "username"
-    );
-
-
-    localStorage.removeItem(
-        "role"
-    );
-
-
-
-    window.location.href =
-        "login.html";
-
+  window.location.href = "login.html";
 }

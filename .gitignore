@@ -1,63 +1,53 @@
-.env
-__pycache__/
-*.pyc
-logs/
-node_modules/
+# ============================================================
+# Environment / Secrets
+# ============================================================
 
-.env
-
-__pycache__/
-*.pyc
-
-logs/
-
-node_modules/
-
-# Environment Variables
 .env
 .env.*
 !.env.example
 
+*.pem
+*.key
+*.crt
+*.csr
+
+# ============================================================
 # Python
+# ============================================================
+
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
 
-# Virtual Environments
-venv/
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+develop-eggs/
+.eggs/
+pip-wheel-metadata/
+share/python-wheels/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
 .venv/
+venv/
 env/
+ENV/
 
-# Logs
-logs/
-*.log
+# ============================================================
+# Rasa
+# ============================================================
 
-# IDE
-.vscode/
-.idea/
-
-# User Configuration
-.config/
-.keras/
-
-# Node
-node_modules/
-
-# Docker
-docker-compose.override.yml
-
-# Local Databases
-*.db
-*.sqlite3
-
-# OS Files
-.DS_Store
-Thumbs.db
-
-# Shell history
-**/.bash_history
-
-# Backup files
-*.bak
+# Keep trained Rasa models in version control so the chatbot
+# works immediately after cloning the repository.
 
 # Ignore all Rasa trained models
 rasa/models/*.tar.gz
@@ -65,5 +55,101 @@ rasa/models/*.tar.gz
 # Keep the current trained model
 !rasa/models/20260630-023129-magnetic-cathedral.tar.gz
 
-# Uploaded files
-file_service/uploads/
+# Rasa runtime / temporary files
+.rasa/
+rasa/.config/
+rasa/.keras/
+*.log
+
+# ============================================================
+# Node.js / Frontend
+# ============================================================
+
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Keep package-lock.json tracked.
+# package-lock.json
+
+# ============================================================
+# Runtime uploads / encrypted file storage
+# ============================================================
+
+file_service/uploads/*
+!file_service/uploads/.gitkeep
+
+# ============================================================
+# Database / Runtime data
+# ============================================================
+
+*.sqlite
+*.sqlite3
+*.db
+
+postgres/data/
+postgres/pgdata/
+
+# ============================================================
+# Temporary / Generated files
+# ============================================================
+
+tmp/
+temp/
+*.tmp
+*.temp
+
+*.bak
+*.swp
+*.swo
+*~
+
+# Test artifacts
+test-results/
+coverage/
+
+# ============================================================
+# IDE / Editor
+# ============================================================
+
+.vscode/
+.idea/
+*.iml
+
+# ============================================================
+# OS files
+# ============================================================
+
+.DS_Store
+.DS_Store?
+Thumbs.db
+Desktop.ini
+
+# ============================================================
+# Logs
+# ============================================================
+
+*.log
+logs/
+
+# ============================================================
+# Docker
+# ============================================================
+
+docker-compose.override.yml
+
+# ============================================================
+# Project-specific sensitive/generated files
+# ============================================================
+
+before-key-migration.sql
+wrapped-key-test.txt
+
+# ============================================================
+# Logical PostgreSQL Backup
+# ============================================================
+
+/backups/
+/backup.sql

@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -12,8 +13,9 @@ class FileResponse(BaseModel):
 
     mime_type: str | None
 
-    uploaded_at: datetime
+    status: str
 
+    uploaded_at: datetime
 
     class Config:
 

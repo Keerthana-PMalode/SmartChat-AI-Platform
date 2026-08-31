@@ -148,6 +148,8 @@ services:
     depends_on:
       - rasa
       - auth
+      - file_service
+      
 
     restart: unless-stopped
 

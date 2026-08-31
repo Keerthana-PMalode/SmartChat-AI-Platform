@@ -2,8 +2,8 @@ import requests
 from requests.exceptions import (
     ConnectionError,
     HTTPError,
-    Timeout,
     RequestException,
+    Timeout,
 )
 
 FASTAPI_URL = "http://auth_service:8000/chat/history"
@@ -41,9 +41,7 @@ def save_chat(
         "response": response,
     }
 
-    headers = {
-        "Content-Type": "application/json"
-    }
+    headers = {"Content-Type": "application/json"}
 
     if token:
         headers["Authorization"] = f"Bearer {token}"

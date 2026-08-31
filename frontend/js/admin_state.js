@@ -36,5 +36,3 @@ export function canNavigateTo(section) {
   // Later you can add rules, e.g.:
   // return section !== "settings" || userIsAdmin();
 }
-
-

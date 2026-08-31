@@ -2,20 +2,21 @@
 
 A production-style AI chatbot platform built using **Rasa**, **FastAPI**, **PostgreSQL**, **Docker Compose**, and **Nginx**.
 
-The platform combines conversational AI, secure authentication, encrypted file management, and a scalable microservice architecture.
+SmartChat combines conversational AI, secure authentication, encrypted file
+management, and a modular microservice architecture.
 
 ---
 
 # Project Highlights
 
-- 🤖 AI Chatbot powered by Rasa Open Source
-- 🔐 JWT Authentication & Role-Based Authorization
-- 📁 Encrypted File Upload & Sharing
-- 🗄 PostgreSQL Database
-- 🐳 Dockerized Microservices
-- 🌐 Nginx Reverse Proxy
+- 🤖 AI chatbot powered by Rasa Open Source
+- 🔐 JWT authentication and role-based authorization
+- 📁 Encrypted file upload, download, and sharing
+- 🗄 PostgreSQL database
+- 🐳 Dockerized microservices
+- 🌐 Nginx reverse proxy
 - ⚡ FastAPI REST APIs
-- 📚 Modular Project Architecture
+- 📚 Modular project architecture
 
 ---
 
@@ -33,52 +34,43 @@ The platform combines conversational AI, secure authentication, encrypted file m
 
 ---
 
-# System Architecture
+# Architecture Overview
 
-The application follows a containerized microservice architecture.
+SmartChat uses a containerized microservice architecture.
 
-![System Architecture](docs/images/system-architecture.png)
+Nginx is the primary browser-facing entry point. It serves the frontend and
+reverse-proxies requests to the authentication, chatbot, and file-management
+services over the Docker Compose network.
 
----
+## Architecture diagram
 
-# Running Containers
+```text
+Browser
+   │
+   │ localhost:8081
+   ▼
+Nginx
+   │
+   ├──────────────► Auth Service :8000
+   │                    │
+   │                    └──────────► PostgreSQL
+   │
+   ├──────────────► Rasa :5006
+   │                    │
+   │                    ▼
+   │                 Rasa SDK :5055
+   │                    │
+   │                    └──────────► PostgreSQL
+   │
+   └──────────────► File Service :8001
+                         │
+                         ├──────────► PostgreSQL
+                         │
+                         └──────────► Encrypted File Storage
+```
 
-The entire platform runs as independent Docker containers orchestrated using Docker Compose.
-
-The following screenshot shows the complete application stack running successfully.
-
-| Container | Purpose |
-|-----------|---------|
-| postgres | PostgreSQL Database |
-| auth_service | Authentication & JWT APIs |
-| file_service | Secure File Storage Service |
-| rasa_sdk | Custom Rasa Actions |
-| rasa_server | Conversational AI Engine |
-| rasa_nginx | Reverse Proxy & Frontend |
-
-![Docker Containers](docs/images/docker-ps.png)
-
----
-
-# Database Design
-
-The database schema consists of authentication, chatbot history, secure file storage, and permission management.
-
-![Database ER Diagram](docs/images/database-erd.png)
-
----
-
-# Chat History Relationship
-
-Authenticated and guest conversations are stored efficiently using either a registered user or a session identifier.
-
-![Chat History ER Diagram](docs/images/chat-history-erd.png)
-
----
-
-# Project Structure
-
-![Project Structure](docs/images/project-structure.png)
+For detailed service interactions, authentication, database relationships,
+encryption, authorization, and request flows, see Architecture.
 
 ---
 
@@ -86,71 +78,108 @@ Authenticated and guest conversations are stored efficiently using either a regi
 
 ## Authentication
 
-- User Registration
-- Login
-- JWT Token Generation
-- Password Hashing
-- Role-based Access Control
-
----
+- User registration
+- User login
+- Password hashing
+- JWT token generation and validation
+- Role-based access control
+- User administration
 
 ## Chatbot
 
-- Rasa Conversational AI
-- Custom Actions
-- Chat History
-- Guest Sessions
-- Authenticated Users
+- Rasa conversational AI
+- Custom Rasa actions
+- Authenticated chat sessions
+- Persistent chat history
+- Per-user chat-history isolation
+- Session-based conversation tracking
 
----
+SmartChat does not support guest or unauthenticated chatbot sessions.
 
 ## File Management
 
-- Upload
-- Download
-- File Encryption
-- Sharing
-- Permission Management
-- Audit Logging
+- File upload
+- File download
+- File encryption
+- File deletion
+- File sharing
+- Permission management
+- Audit logging
+- Per-user file ownership
 
 ---
 
-## Infrastructure
+# Project Structure
 
-- Docker Compose
-- PostgreSQL
-- Nginx Reverse Proxy
-- REST APIs
-- Container Networking
+```text
+SmartChat-AI-Platform/
+│
+├── auth_service/              # Authentication and user management
+│   ├── app/
+│   └── scripts/
+│
+├── file_service/              # Secure encrypted file management
+│   ├── app/
+│   │   └── models/
+│   ├── alembic/
+│   └── scripts/
+│
+├── frontend/                  # HTML, CSS, and JavaScript frontend
+│   ├── assets/
+│   ├── css/
+│   └── js/
+│
+├── nginx/                     # Nginx reverse proxy configuration
+│
+├── postgres/                  # Database initialization and seed scripts
+│
+├── rasa/                      # Rasa conversational AI
+│   ├── data/
+│   ├── tests/
+│   ├── models/
+│   ├── config.yml
+│   ├── domain.yml
+│   ├── credentials.yml
+│   └── endpoints.yml
+│
+├── rasa_sdk/                  # Custom Rasa actions
+│   └── actions/
+│
+├── docs/                      # Project documentation
+│   ├── architecture.md
+│   ├── api.md
+│   ├── deployment.md
+│   ├── development.md
+│   ├── testing.md
+│   └── troubleshooting.md
+│
+├── scripts/                   # Development and database helper scripts
+│
+├── docker-compose.yml         # Docker Compose orchestration
+├── .env.example               # Example environment configuration
+├── .gitignore
+├── README.md
+└── LICENSE
+```
+
+**file_service/uploads/** is runtime storage for encrypted uploaded files and is excluded from version control.
 
 ---
 
 # Getting Started
 
----
-
-# Docker Setup
-
-Before starting the application, ensure that Docker and Docker Compose are installed and running on your system. This project is designed to run entirely inside Docker containers using **Docker Compose**.
-
-> **Note**
->
-> This project is fully containerized using **Docker Compose**. All Python dependencies are installed and executed inside their respective Docker containers. A local Python virtual environment (`venv`) is **not required** to build or run the application.
->
-> To get started:
-> 1. Configure the `.env` file.
-> 2. Create the required Docker volumes.
-> 3. Build and start the services using Docker Compose.
->
-> This approach ensures a consistent development and deployment environment across Windows, Linux, and macOS.
+SmartChat is designed to run entirely inside Docker containers using Docker
+Compose. A local Python virtual environment is not required.
 
 ## Prerequisites
 
-- Docker Desktop (Windows/macOS) or Docker Engine (Linux)
-- Docker Compose (included with Docker Desktop)
+Install:
+
+- Docker Desktop on Windows/macOS, or Docker Engine on Linux
+- Docker Compose
 - Git
 
-Verify the installation:
+Verify Docker:
 
 ```bash
 docker --version
@@ -164,25 +193,26 @@ git clone https://github.com/Keerthana-PMalode/SmartChat-AI-Platform.git
 cd SmartChat-AI-Platform
 ```
 
-## Configure Environment Variables
+## Configure the Environment
 
-Create an environment file by copying the example configuration:
+Create the environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-or on Windows:
+On Windows PowerShell:
 
 ```powershell
 copy .env.example .env
 ```
 
-Update the following values as required:
+Configure the required values:
 
 ```text
 DATABASE_URL=postgresql://chatbot:chatbot@postgres:5432/chatbot
 SECRET_KEY=change_this_to_a_long_random_secret
+FILE_MASTER_KEY=change_this_to_a_secure_fernet_key
 
 POSTGRES_HOST=postgres
 POSTGRES_PORT=5432
@@ -191,192 +221,110 @@ POSTGRES_PASSWORD=chatbot
 POSTGRES_DB=chatbot
 ```
 
-> **Important:** Do not commit your `.env` file to GitHub. Only commit `.env.example`.
+Use strong production secrets and never commit .env to version control.
+
+**FILE_MASTER_KEY** must be a securely generated Fernet key because it protects
+the stored file encryption keys.
 
 ## Create Docker Volumes
 
-The project uses persistent Docker volumes for PostgreSQL data and Rasa trained models.
-
-Create them before starting the application:
+Create the persistent volumes:
 
 ```bash
 docker volume create chatbot-project_postgres_data
 docker volume create chatbot-project_rasa_models
 ```
 
-Verify that the volumes exist:
+Verify them:
 
 ```bash
 docker volume ls
 ```
 
-## Build and Start Containers
-
-Build and start all services using Docker Compose:
+## Build and Start the Application
 
 ```bash
 docker compose up --build
 ```
-This command:
-- Builds custom service images
-- Pulls required base images from Docker Hub
-- Creates containers
-- Creates the Docker network
-- Starts all application services
 
-## Stop Containers
+## Apply Database Migrations
 
-Stop the running services:
+The File Service uses Alembic for database migrations.
 
 ```bash
-docker compose down
+docker compose exec file_service alembic upgrade head
 ```
-This removes containers and the Docker Compose network. Docker volumes are preserved, so PostgreSQL data and Rasa models remain available.
 
-## Verify Running Containers
+## Verify the Containers
 
 ```bash
 docker ps
 ```
-Expected containers:
-- chatbot-project-nginx-1
-- chatbot-project-rasa-1
-- chatbot-project-rasa_sdk-1
-- chatbot-project-file_service-1
-- chatbot-project-auth-1
-- chatbot-project-postgres-1
+
+A successful deployment should include containers similar to:
+
+- postgres
+- auth
+- file_service
+- rasa_sdk
+- rasa
+- nginx
 
 ---
 
-# Services
+## Application Access
 
-| Service | URL |
-|----------|-----|
-| Frontend | http://localhost:8081 |
-| Auth API | http://localhost:8000 |
-| File API | http://localhost:8001 |
-| Rasa API | http://localhost:5006 |
+The normal browser-facing application is:
 
----
-
-# Service Verification
-
-After starting all containers with Docker Compose, verify that each service is running correctly.
-
-## Frontend
-
-Open the application in your browser:
-
-```
+```http
 http://localhost:8081
 ```
 
-or
+The login page is:
 
-```
+```http
 http://localhost:8081/login.html
 ```
 
-The login page should be displayed successfully.
+Nginx provides the normal browser-facing API routes:
 
-## Authorization Service
+| Route      | Purpose                  |
+|------------|--------------------------|
+| `/auth/*`  | Authentication and user APIs |
+| `/rasa/*`  | Rasa conversational API  |
+| `/files/*` | File-management API      |
 
-The Authorization Service can be verified by opening:
+Individual backend ports may also be published for development and
+troubleshooting.
 
-```
-http://localhost:8000/
-```
+Typical development endpoints include:
 
-A response similar to the following confirms that the service is running correctly:
-
-```json
-{
-  "detail": "Not Found"
-}
-```
-
-This response is expected because the root (`/`) endpoint is intentionally not implemented.
-
-To explore and test the available authentication and authorization APIs, open the FastAPI Swagger documentation:
-
-```
+```http
 http://localhost:8000/docs
-```
-
-From the Swagger UI, you can test endpoints such as:
-
-- User Registration
-- User Login
-- JWT Token Generation
-- User Administration
-- Chat History APIs
-
-## File Service
-
-Verify the File Service by opening:
-
-```
-http://localhost:8001/
-```
-
-A response similar to the following is expected:
-
-```json
-{
-  "detail": "Not Found"
-}
-```
-
-The interactive API documentation is available at:
-
-```
 http://localhost:8001/docs
-```
-
-You can test:
-
-- File Upload
-- File Download
-- File Sharing
-- Permission Management
-- Audit APIs
-
-## Rasa Server
-
-Verify the Rasa server by opening:
-
-```
 http://localhost:5006/
 ```
 
-or
+These direct backend endpoints are intended for development and testing. Normal
+browser application traffic should use Nginx on port 8081.
 
-```
-http://localhost:5006/version
-```
+---
 
-The `/version` endpoint returns the installed Rasa version, confirming that the conversational AI server is operational.
+# Security
 
-## Running Containers
+SmartChat uses JWT-based authentication for protected APIs.
 
-You can verify that all services are running using:
+Authenticated users can access only resources authorized for their account.
+Chat history is scoped by both the conversation session_id and the
+authenticated user's identity.
 
-```bash
-docker ps
-```
+Uploaded files are encrypted using unique Fernet file encryption keys. The
+file keys are protected using the server-side FILE_MASTER_KEY.
 
-A successful deployment should show containers similar to:
+File-related operations can be recorded in audit logs.
 
-- postgres
-- auth_service
-- file_service
-- rasa_sdk
-- rasa_server
-- rasa_nginx
-
-See the deployment screenshot below.
-
-![Docker Containers](docs/images/docker-ps.png)
+For the detailed security and authorization architecture, see
+Architecture.
 
 ---
 
@@ -406,25 +354,34 @@ See the deployment screenshot below.
 
 ---
 
+## Docker Containers
+
+![Docker Containers](docs/images/docker-ps.png)
+
+---
+
 # Documentation
 
-Additional documentation is available in the **docs/** folder.
+Detailed project documentation is available in the docs/ directory.
 
-* Architecture
-* API Documentation
-* Deployment Guide
+- [Architecture](docs/architecture.md)
+- [API Documentation](docs/api.md)
+- [Deployment Guide](docs/deployment.md)
+- [Development Guide](docs/development.md)
+- [Testing Guide](docs/testing.md)
+- [Troubleshooting Guide](docs/troubleshooting.md)
 
 ---
 
 # Future Enhancements
 
-* Kubernetes
-* CI/CD
-* Redis
-* OAuth2
-* WebSockets
-* Monitoring
-* Unit Testing
+- Kubernetes deployment
+- CI/CD integration
+- Redis
+- OAuth2
+- WebSockets
+- Monitoring
+- Expanded unit testing
 
 ---
 
@@ -434,13 +391,13 @@ Additional documentation is available in the **docs/** folder.
 
 Computer Science & Engineering (IoT)
 
-Interested in
+Areas of interest:
 
-* Backend Development
-* AI Applications
-* Distributed Systems
-* Cloud & DevOps
-* Conversational AI
+- Backend development
+- AI applications
+- Distributed systems
+- Cloud and DevOps
+- Conversational AI
 
 ---
 

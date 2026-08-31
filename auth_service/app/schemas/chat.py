@@ -1,5 +1,7 @@
-from pydantic import BaseModel, ConfigDict
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict
+
 
 class ChatCreate(BaseModel):
     session_id: str
@@ -17,8 +19,4 @@ class ChatResponse(BaseModel):
     user_id: int
     timestamp: datetime
 
-    model_config = ConfigDict(
-        from_attributes=True
-    )
-
-
+    model_config = ConfigDict(from_attributes=True)

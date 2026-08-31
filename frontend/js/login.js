@@ -1,104 +1,91 @@
 document.addEventListener("DOMContentLoaded", () => {
+  console.log("Login JS loaded");
 
-    console.log("Login JS loaded");
+  let selectedRole = "";
 
-    let selectedRole = "";
+  const title = document.getElementById("title");
+  const roleSelection = document.getElementById("role-selection");
+  const loginForm = document.getElementById("login-form");
 
-    const title = document.getElementById("title");
-    const roleSelection = document.getElementById("role-selection");
-    const loginForm = document.getElementById("login-form");
+  const userBtn = document.getElementById("user-login-btn");
+  const adminBtn = document.getElementById("admin-login-btn");
 
-    const userBtn = document.getElementById("user-login-btn");
-    const adminBtn = document.getElementById("admin-login-btn");
+  const error = document.getElementById("error");
 
-    const error = document.getElementById("error");
+  // -----------------------------
+  // Role Selection
+  // -----------------------------
 
-    // -----------------------------
-    // Role Selection
-    // -----------------------------
+  userBtn.addEventListener("click", () => {
+    selectedRole = "user";
 
-    userBtn.addEventListener("click", () => {
-        selectedRole = "user";
+    title.textContent = "User Login";
 
-        title.textContent = "User Login";
+    roleSelection.classList.add("hidden");
+    loginForm.classList.remove("hidden");
+  });
 
-        roleSelection.classList.add("hidden");
-        loginForm.classList.remove("hidden");
-    });
+  adminBtn.addEventListener("click", () => {
+    selectedRole = "admin";
 
-    adminBtn.addEventListener("click", () => {
-        selectedRole = "admin";
+    title.textContent = "Admin Login";
 
-        title.textContent = "Admin Login";
+    roleSelection.classList.add("hidden");
+    loginForm.classList.remove("hidden");
+  });
 
-        roleSelection.classList.add("hidden");
-        loginForm.classList.remove("hidden");
-    });
+  // -----------------------------
+  // Login
+  // -----------------------------
 
-    // -----------------------------
-    // Login
-    // -----------------------------
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
 
-    loginForm.addEventListener("submit", async (event) => {
+    console.log("Login submit triggered");
 
-        event.preventDefault();
+    const username = document.getElementById("username").value;
 
-        console.log("Login submit triggered");
+    const password = document.getElementById("password").value;
 
-        const username =
-            document.getElementById("username").value;
+    try {
+      const response = await fetch("http://localhost:8000/login", {
+        method: "POST",
 
-        const password =
-            document.getElementById("password").value;
+        headers: {
+          "Content-Type": "application/json",
+        },
 
-        try {
+        body: JSON.stringify({
+          username,
+          password,
+          role: selectedRole,
+        }),
+      });
 
-            const response = await fetch("http://localhost:8000/login", {
+      console.log("Login status:", response.status);
 
-                method: "POST",
+      if (!response.ok) {
+        throw new Error("Login failed");
+      }
 
-                headers: {
-                    "Content-Type": "application/json"
-                },
+      const data = await response.json();
 
-                body: JSON.stringify({
-                    username,
-                    password,
-                    role: selectedRole
-                })
+      // Store role
+      localStorage.setItem("role", selectedRole);
 
-            });
+      // Existing success handler
+      handleLoginSuccess(data, username);
 
-            console.log("Login status:", response.status);
+      // Redirect based on role
+      if (selectedRole === "admin") {
+        window.location.href = "admin.html";
+      } else {
+        window.location.href = "chat.html";
+      }
+    } catch (err) {
+      console.error("Login error:", err);
 
-            if (!response.ok) {
-                throw new Error("Login failed");
-            }
-
-            const data = await response.json();
-
-            // Store role
-            localStorage.setItem("role", selectedRole);
-
-            // Existing success handler
-            handleLoginSuccess(data, username);
-
-            // Redirect based on role
-            if (selectedRole === "admin") {
-                window.location.href = "admin.html";
-            } else {
-                window.location.href = "chat.html";
-            }
-
-        }
-        catch (err) {
-
-            console.error("Login error:", err);
-
-            error.innerText = "Login failed";
-
-        }
-
-    });
-
+      error.innerText = "Login failed";
+    }
+  });
 });

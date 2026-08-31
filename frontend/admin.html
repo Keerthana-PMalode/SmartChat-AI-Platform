@@ -1,290 +1,246 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Admin Dashboard</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <link rel="stylesheet" href="css/admin.css">
-</head>
-<body>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+    />
+    <link rel="stylesheet" href="css/admin.css" />
+  </head>
+  <body>
     <div id="app-content" class="dashboard">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <i class="fas fa-robot"></i>
-                <span>Admin Panel</span>
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <i class="fas fa-robot"></i>
+          <span>Admin Panel</span>
+        </div>
+        <nav class="sidebar-nav" aria-label="Admin navigation">
+          <a href="#dashboard" class="nav-item active" data-section="dashboard">
+            <i class="fas fa-home"></i>
+            Dashboard
+          </a>
+          <a href="#users" class="nav-item" data-section="users">
+            <i class="fas fa-users"></i>
+            Users
+          </a>
+          <a href="#chat-history" class="nav-item" data-section="chat-history">
+            <i class="fas fa-comments"></i>
+            Chat History
+          </a>
+          <a href="#analytics" class="nav-item" data-section="analytics">
+            <i class="fas fa-chart-line"></i>
+            Analytics
+          </a>
+          <a href="#settings" class="nav-item" data-section="settings">
+            <i class="fas fa-cog"></i>
+            Settings
+          </a>
+          <a href="#logs" class="nav-item" data-section="logs">
+            <i class="fas fa-file-alt"></i>
+            Logs
+          </a>
+          <a href="#" id="logout-btn" class="nav-item logout">
+            <i class="fas fa-sign-out-alt"></i>
+            Logout
+          </a>
+        </nav>
+      </aside>
+      <!-- Main Content -->
+      <main class="main-content">
+        <!-- Top Bar -->
+        <header class="topbar">
+          <div>
+            <h2 id="page-title">Dashboard</h2>
+          </div>
+          <div class="admin-profile">
+            <div class="avatar">A</div>
+            <span>Admin</span>
+            <i class="fas fa-chevron-down"></i>
+          </div>
+        </header>
+        <!-- Dashboard -->
+        <section id="dashboard-panel" class="content-panel">
+          <div class="card">
+            <h3>Dashboard</h3>
+            <p>Welcome to the admin dashboard.</p>
+          </div>
+        </section>
+        <section id="users-panel" class="content-panel hidden">
+          <div class="section-card">
+            <!-- Header -->
+            <div class="section-header">
+              <h2>Users</h2>
+              <button id="create-user-btn" class="primary-btn">
+                <i class="fas fa-user-plus"></i>
+                Create User
+              </button>
             </div>
-            <nav class="sidebar-nav" aria-label="Admin navigation">
-                <a href="#dashboard" class="nav-item active" data-section="dashboard">
-                    <i class="fas fa-home"></i>
-                    Dashboard
-                </a>
-                <a href="#users" class="nav-item" data-section="users">
-                    <i class="fas fa-users"></i>
-                    Users
-                </a>
-                <a href="#chat-history" class="nav-item" data-section="chat-history">
-                    <i class="fas fa-comments"></i>
-                    Chat History
-                </a>
-                <a href="#analytics" class="nav-item" data-section="analytics">
-                    <i class="fas fa-chart-line"></i>
-                    Analytics
-                </a>
-                <a href="#settings" class="nav-item" data-section="settings">
-                    <i class="fas fa-cog"></i>
-                    Settings
-                </a>
-                <a href="#logs" class="nav-item" data-section="logs">
-                    <i class="fas fa-file-alt"></i>
-                    Logs
-                </a>
-                <a href="#" id="logout-btn" class="nav-item logout">
-                    <i class="fas fa-sign-out-alt"></i>
-                    Logout
-                </a>
-            </nav>
-        </aside>
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Top Bar -->
-            <header class="topbar">
-                <div>
-                    <h2 id="page-title">Dashboard</h2>
-                </div>
-                <div class="admin-profile">
-                    <div class="avatar">
-                        A
-                    </div>
-                    <span>Admin</span>
-                    <i class="fas fa-chevron-down"></i>
-                </div>
-            </header>
-            <!-- Dashboard -->
-            <section id="dashboard-panel" class="content-panel">
-                <div class="card">
-                    <h3>Dashboard</h3>
-                    <p>
-                        Welcome to the admin dashboard.
-                    </p>
-                </div>
-            </section>
-            <section id="users-panel" class="content-panel hidden">
-                <div class="section-card">
-                    <!-- Header -->
-                    <div class="section-header">
-                        <h2>
-                            Users
-                        </h2>
-                        <button id="create-user-btn" class="primary-btn">
-                            <i class="fas fa-user-plus"></i>
-                            Create User
-                        </button>
-                    </div>
-                    <!-- Toolbar -->
-                    <div class="section-toolbar">
-                        <div class="search-box">
-                            <input type="text" placeholder="Search users...">
-                            <button>
-                                <i class="fas fa-search"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <!-- Content -->
-                    <div class="table-wrapper">
-                        <table class="users-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Name</th>
-                                    <th>Email</th>
-                                    <th>Role</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="users-tbody">
-                            </tbody>
-                        </table>
-                    </div>
-                    <!-- Footer -->
-                    <div class="section-footer">
-                        <span>
-                            Showing 1-10 of 250 users
-                        </span>
-                        <div class="pagination">
-                            <button>
-                                &lt;
-                            </button>
-                            <button class="active">
-                                1
-                            </button>
-                            <button>
-                                2
-                            </button>
-                            <button>
-                                3
-                            </button>
-                            <button>
-                                &gt;
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </section>
-            <!-- Chat History -->
-            <section id="chat-history-panel" class="content-panel hidden">
-                <div class="section-card">
-                    <!-- Header -->
-                    <div class="section-header">
-                        <h2>
-                            Chat History
-                        </h2>
-                        <button class="primary-btn" id="export-chat-btn">
-                            <i class="fas fa-file-export"></i>
-                            Export
-                        </button>
-                    </div>
-                    <!-- Toolbar -->
-                    <div class="section-toolbar">
-                        <div class="search-box">
-                            <input type="text" id="chat-search" placeholder="Search conversations...">
-                            <button>
-                                <i class="fas fa-search"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <!-- Content -->
-                    <div class="table-wrapper">
-                        <table class="chat-table">
-                            <thead>
-                                <tr>
-                                    <th>
-                                        ID
-                                    </th>
-                                    <th>
-                                        User
-                                    </th>
-                                    <th>
-                                        Date
-                                    </th>
-                                    <th>
-                                        Messages
-                                    </th>
-                                    <th>
-                                        Status
-                                    </th>
-                                    <th>
-                                        Actions
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody id="chat-history-tbody">
-                                <!-- Dynamic Chat History -->
-                            </tbody>
-                        </table>
-                    </div>
-                    <!-- Footer -->
-                    <div class="section-footer">
-                        <span id="chat-count">
-                            Showing 1-20 conversations
-                        </span>
-                    </div>
-                </div>
-            </section>
-            <!-- Analytics -->
-            <section id="analytics-panel" class="content-panel hidden">
-                <div class="card">
-                    Analytics
-                </div>
-            </section>
-            <!-- Settings -->
-            <section id="settings-panel" class="content-panel hidden">
-                <div class="card">
-                    Settings
-                </div>
-            </section>
-            <!-- Logs -->
-            <section id="logs-panel" class="content-panel hidden">
-                <div class="section-card">
-                    <!-- Header -->
-                    <div class="section-header">
-                        <h2>
-                            System Logs
-                        </h2>
-                        <button class="primary-btn" id="download-logs-btn">
-                            <i class="fas fa-download"></i>
-                            Download
-                        </button>
-                    </div>
-                    <!-- Toolbar -->
-                    <div class="section-toolbar">
-                        <select id="log-level-filter">
-                            <option value="all">
-                                All Levels
-                            </option>
-                            <option value="info">
-                                Info
-                            </option>
-                            <option value="warning">
-                                Warning
-                            </option>
-                            <option value="error">
-                                Error
-                            </option>
-                        </select>
-                        <div class="search-box">
-                            <input type="text" id="log-search" placeholder="Search logs...">
-                            <button>
-                                <i class="fas fa-search"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <!-- Content -->
-                    <div class="table-wrapper">
-                        <table class="logs-table">
-                            <thead>
-                                <tr>
-                                    <th>
-                                        Timestamp
-                                    </th>
-                                    <th>
-                                        User
-                                    </th>
-                                    <th>
-                                        Action
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody id="logs-tbody">
-                                <!-- Dynamic Logs -->
-                            </tbody>
-                        </table>
-                    </div>
-                    <!-- Footer -->
-                    <div class="section-footer">
-                        <span id="logs-summary">
-                            Showing latest logs
-                        </span>
-                    </div>
-                </div>
-            </section>
-        </main>
+            <!-- Toolbar -->
+            <div class="section-toolbar">
+              <div class="search-box">
+                <input type="text" placeholder="Search users..." />
+                <button>
+                  <i class="fas fa-search"></i>
+                </button>
+              </div>
+            </div>
+            <!-- Content -->
+            <div class="table-wrapper">
+              <table class="users-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="users-tbody"></tbody>
+              </table>
+            </div>
+            <!-- Footer -->
+            <div class="section-footer">
+              <span> Showing 1-10 of 250 users </span>
+              <div class="pagination">
+                <button>&lt;</button>
+                <button class="active">1</button>
+                <button>2</button>
+                <button>3</button>
+                <button>&gt;</button>
+              </div>
+            </div>
+          </div>
+        </section>
+        <!-- Chat History -->
+        <section id="chat-history-panel" class="content-panel hidden">
+          <div class="section-card">
+            <!-- Header -->
+            <div class="section-header">
+              <h2>Chat History</h2>
+              <button class="primary-btn" id="export-chat-btn">
+                <i class="fas fa-file-export"></i>
+                Export
+              </button>
+            </div>
+            <!-- Toolbar -->
+            <div class="section-toolbar">
+              <div class="search-box">
+                <input
+                  type="text"
+                  id="chat-search"
+                  placeholder="Search conversations..."
+                />
+                <button>
+                  <i class="fas fa-search"></i>
+                </button>
+              </div>
+            </div>
+            <!-- Content -->
+            <div class="table-wrapper">
+              <table class="chat-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>User</th>
+                    <th>Date</th>
+                    <th>Messages</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="chat-history-tbody">
+                  <!-- Dynamic Chat History -->
+                </tbody>
+              </table>
+            </div>
+            <!-- Footer -->
+            <div class="section-footer">
+              <span id="chat-count"> Showing 1-20 conversations </span>
+            </div>
+          </div>
+        </section>
+        <!-- Analytics -->
+        <section id="analytics-panel" class="content-panel hidden">
+          <div class="card">Analytics</div>
+        </section>
+        <!-- Settings -->
+        <section id="settings-panel" class="content-panel hidden">
+          <div class="card">Settings</div>
+        </section>
+        <!-- Logs -->
+        <section id="logs-panel" class="content-panel hidden">
+          <div class="section-card">
+            <!-- Header -->
+            <div class="section-header">
+              <h2>System Logs</h2>
+              <button class="primary-btn" id="download-logs-btn">
+                <i class="fas fa-download"></i>
+                Download
+              </button>
+            </div>
+            <!-- Toolbar -->
+            <div class="section-toolbar">
+              <select id="log-level-filter">
+                <option value="all">All Levels</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+              </select>
+              <div class="search-box">
+                <input
+                  type="text"
+                  id="log-search"
+                  placeholder="Search logs..."
+                />
+                <button>
+                  <i class="fas fa-search"></i>
+                </button>
+              </div>
+            </div>
+            <!-- Content -->
+            <div class="table-wrapper">
+              <table class="logs-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>User</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="logs-tbody">
+                  <!-- Dynamic Logs -->
+                </tbody>
+              </table>
+            </div>
+            <!-- Footer -->
+            <div class="section-footer">
+              <span id="logs-summary"> Showing latest logs </span>
+            </div>
+          </div>
+        </section>
+      </main>
     </div>
     <!-- Confirmation Modal -->
-    <div id="confirm-modal" class="modal hidden" role="dialog" aria-modal="true" aria-hidden="true">
-        <div class="modal-box">
-            <h2 data-modal-title></h2>
-            <p id="logout-desc" data-modal-message></p>
-            <div class="modal-actions">
-                <button class="btn btn-secondary" data-modal-cancel>
-                    Cancel
-                </button>
-                <button class="btn btn-danger" data-modal-confirm>
-                    Confirm
-                </button>
-            </div>
+    <div
+      id="confirm-modal"
+      class="modal hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-hidden="true"
+    >
+      <div class="modal-box">
+        <h2 data-modal-title></h2>
+        <p id="logout-desc" data-modal-message></p>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" data-modal-cancel>Cancel</button>
+          <button class="btn btn-danger" data-modal-confirm>Confirm</button>
         </div>
+      </div>
     </div>
     <script type="module" src="js/admin.js"></script>
-</body>
+  </body>
 </html>

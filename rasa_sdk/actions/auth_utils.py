@@ -1,5 +1,6 @@
 import os
-from jose import jwt, JWTError
+
+from jose import JWTError, jwt
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 
@@ -18,11 +19,7 @@ def get_user_from_token(headers):
     token = auth.replace("Bearer ", "")
 
     try:
-        payload = jwt.decode(
-            token,
-            SECRET_KEY,
-            algorithms=[ALGORITHM]
-        )
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
         return payload.get("user_id", "guest")
 

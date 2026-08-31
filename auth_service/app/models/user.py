@@ -1,7 +1,6 @@
+from app.core.database import Base
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import relationship
-from app.core.database import Base
-from app.models.chat import ChatHistory
 
 
 class User(Base):
@@ -15,6 +14,6 @@ class User(Base):
     role = Column(String(20), nullable=False, default="user")
 
     # Relationship to ChatHistory
-    chats = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
-
-
+    chats = relationship(
+        "ChatHistory", back_populates="user", cascade="all, delete-orphan"
+    )

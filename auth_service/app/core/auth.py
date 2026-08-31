@@ -1,24 +1,23 @@
-from passlib.context import CryptContext
-from jose import jwt, JWTError
-from datetime import datetime, timedelta
 import os
+from datetime import datetime, timedelta
+
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "secret")
 ALGORITHM = "HS256"
 
+
 def verify_token(token: str):
     try:
-        payload = jwt.decode(
-            token,
-            SECRET_KEY,
-            algorithms=[ALGORITHM]
-        )
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
 
     except JWTError:
         return None
+
 
 def hash_password(password: str):
     return pwd_context.hash(password)

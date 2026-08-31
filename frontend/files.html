@@ -1,56 +1,52 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>
-        Secure Files
-    </title>
-    <link rel="stylesheet" href="css/files.css">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+
+    <title>Secure Files</title>
+
+    <link rel="stylesheet" href="css/files.css" />
+  </head>
+
+  <body>
     <div class="files-container">
-        <header class="files-header">
-            <h2>
-                My Secure Files
-            </h2>
-            <div>
-                <button id="uploadBtn">
-                    Upload
-                </button>
-                <button id="backBtn">
-                    Back
-                </button>
-            </div>
-        </header>
-        <section class="upload-section">
-            <input type="file" id="fileInput">
-            <button id="submitUpload">
-                Encrypt & Upload
-            </button>
-        </section>
-        <section>
-            <table>
-                <thead>
-                    <tr>
-                        <th>
-                            File
-                        </th>
-                        <th>
-                            Status
-                        </th>
-                        <th>
-                            Actions
-                        </th>
-                    </tr>
-                </thead>
-                <tbody id="filesTable">
-                </tbody>
-            </table>
-        </section>
+      <header class="files-header">
+        <h2>My Secure Files</h2>
+
+        <div>
+          <button id="refreshBtn">Refresh</button>
+
+          <button id="backBtn">Back</button>
+        </div>
+      </header>
+
+      <section class="upload-section">
+        <input type="file" id="fileInput" />
+
+        <button id="submitUpload">Encrypt & Upload</button>
+      </section>
+
+      <section>
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+
+              <th>Status</th>
+
+              <th>Actions</th>
+            </tr>
+          </thead>
+
+          <tbody id="filesTable">
+            <tr>
+              <td colspan="3">Loading files...</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
     </div>
-    <script type="module" src="js/files/api.js">
-    </script>
-    <script type="module" src="js/files/upload.js">
-    </script>
-</body>
+
+    <script type="module" src="js/files/upload.js"></script>
+  </body>
 </html>

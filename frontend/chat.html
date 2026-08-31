@@ -1,54 +1,51 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ChatBot</title>
-    <link rel="stylesheet" href="css/chat.css">
-</head>
-<body>
+    <link rel="stylesheet" href="css/chat.css" />
+  </head>
+  <body>
     <div class="chat-container">
-        <header class="chat-header">
-            <div class="header-left">
-		<img src="assets/smartchat-ai-avatar.png" class="profile-pic" alt="SmartChat AI Assistant">
-                <div class="header-info">
-                    <h3>ChatBot</h3>
-                    <div class="status">
-                        <span class="status-dot"></span>
-                        <span>
-                            Online
-                        </span>
-                    </div>
-                </div>
+      <header class="chat-header">
+        <div class="header-left">
+          <img
+            src="assets/smartchat-ai-avatar.png"
+            class="profile-pic"
+            alt="SmartChat AI Assistant"
+          />
+          <div class="header-info">
+            <h3>ChatBot</h3>
+            <div class="status">
+              <span class="status-dot"></span>
+              <span> Online </span>
             </div>
-            <div class="header-actions">
-                <button id="filesBtn">
-                    Files
-                </button>
-                <button id="logoutBtn">
-                    Logout
-                </button>
-            </div>
-        </header>
-        <div class="chat-body" id="chatBody">
-            <div class="bot-message">
-                <div class="bubble">
-                    Hello! How can I help you today?
-                </div>
-            </div>
-            <div id="typingIndicator" class="typing hidden">
-                <span class="dot"></span>
-                <span class="dot"></span>
-                <span class="dot"></span>
-            </div>
+          </div>
         </div>
-        <footer class="chat-footer">
-            <input id="message" type="text" placeholder="Type your message...">
-            <button id="sendBtn">
-                ➤
-            </button>
-        </footer>
+        <div class="header-actions">
+          <button id="filesBtn" class="files-btn">
+            <span class="files-icon">▣</span>
+            <span>Files</span>
+          </button>
+          <button id="logoutBtn" class="logout-btn">Logout</button>
+        </div>
+      </header>
+      <div class="chat-body" id="chatBody">
+        <div class="bot-message">
+          <div class="bubble">Hello! How can I help you today?</div>
+        </div>
+        <div id="typingIndicator" class="typing hidden">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+      </div>
+      <footer class="chat-footer">
+        <input id="message" type="text" placeholder="Type your message..." />
+        <button id="sendBtn">➤</button>
+      </footer>
     </div>
     <script src="js/app.js"></script>
-</body>
+  </body>
 </html>

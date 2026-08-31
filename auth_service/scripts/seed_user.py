@@ -1,8 +1,8 @@
 import sys
 
+from app.core.auth import hash_password
 from app.core.database import SessionLocal
 from app.models.user import User
-from app.core.auth import hash_password
 
 db = SessionLocal()
 
@@ -21,11 +21,7 @@ if existing_user:
     print(f"User '{username}' already exists.")
     sys.exit(0)
 
-user = User(
-    username=username,
-    hashed_password=hash_password(password),
-    role=role
-)
+user = User(username=username, hashed_password=hash_password(password), role=role)
 
 db.add(user)
 db.commit()
