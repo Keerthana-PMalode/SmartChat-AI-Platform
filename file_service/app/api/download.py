@@ -21,6 +21,7 @@ def download_file(
     db: Session = Depends(get_db),
     current_user_id: int = Depends(get_current_user),
 ):
+
     file_record = (
         db.query(File)
         .filter(File.id == file_id)
@@ -104,6 +105,7 @@ def download_file(
         "DOWNLOAD",
         request.client.host,
         request.headers.get("user-agent"),
+        access_method="AUTHENTICATED",
     )
 
     return Response(
