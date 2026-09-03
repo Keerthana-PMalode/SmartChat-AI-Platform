@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   let selectedRole = "";
 
+  const API_BASE_URL = "/auth";
   const title = document.getElementById("title");
   const roleSelection = document.getElementById("role-selection");
   const loginForm = document.getElementById("login-form");
@@ -48,7 +49,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const password = document.getElementById("password").value;
 
     try {
-      const response = await fetch("http://localhost:8000/login", {
+      const response = await fetch(`${API_BASE_URL}/login`, {
         method: "POST",
 
         headers: {

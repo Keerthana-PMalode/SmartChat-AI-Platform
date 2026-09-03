@@ -6,6 +6,11 @@ from app.schemas.admin import CreateUserRequest, UpdateRoleRequest
 from app.schemas.chat import ChatCreate, ChatResponse
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+from datetime import date
+from sqlalchemy.exc import IntegrityError
+from fastapi import HTTPException
+
 
 router = APIRouter()
 
@@ -27,8 +32,8 @@ def admin_dashboard(admin=Depends(require_admin), db: Session = Depends(get_db))
 
     return {
         "status": "success",
-        "admin": admin["sub"],
-        "role": admin["role"],
+        "admin": admin.username,
+        "role": admin.role,
         "stats": {
             "users": total_users,
             "chats": total_chats,
@@ -83,26 +88,53 @@ def update_role(
 
 @router.delete("/users/{user_id}")
 def delete_user(
-    user_id: int, admin=Depends(require_admin), db: Session = Depends(get_db)
+    user_id: int,
+    admin=Depends(require_admin),
+    db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.id == user_id).first()
+
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
 
     # Prevent deleting your own account
-    if user.username == admin["sub"]:
-        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    if user.username == admin.username:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete your own account",
+        )
 
     # Prevent removing the last admin
     admin_count = db.query(User).filter(User.role == "admin").count()
+
     if user.role == "admin" and admin_count == 1:
         raise HTTPException(
-            status_code=400, detail="Cannot remove the last administrator"
+            status_code=400,
+            detail="Cannot remove the last administrator",
         )
 
-    db.delete(user)
-    db.commit()
-    return {"status": "deleted"}
+    # Save values before deleting the SQLAlchemy object
+    deleted_username = user.username
+
+    try:
+        db.delete(user)
+        db.commit()
+
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete this user because they are referenced by other records.",
+        )
+
+    return {
+        "status": "deleted",
+        "user_id": user_id,
+        "username": deleted_username,
+    }
 
 
 @router.get("/users/search")
@@ -127,7 +159,7 @@ def store_chat(
     new_chat = ChatHistory(
         user_id=user.id,
         session_id=chat.session_id,
-        sender=chat.sender,  # or admin["sub"] if you want to enforce admin identity
+        sender=chat.sender,  # or admin.username if you want to enforce admin identity
         message=chat.message,
         response=chat.response,
     )

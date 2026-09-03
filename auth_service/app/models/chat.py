@@ -9,7 +9,11 @@ class ChatHistory(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     # Optional link to a user (admin endpoints)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+    )
 
     # Session-based chat (chat endpoints)
     session_id = Column(String, index=True, nullable=True)

@@ -1,5 +1,5 @@
 const API_CONFIG = {
-  BASE_URL: "http://localhost:8000",
+  BASE_URL: "/auth",
   TIMEOUT: 10000,
   RETRIES: 1,
 };

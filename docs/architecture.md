@@ -147,6 +147,7 @@ Its responsibilities include:
 - JWT validation
 - Role-based authorization
 - User administration
+- User deletion and account lifecycle management
 
 After successful authentication, the Auth Service issues a JWT.
 
@@ -491,48 +492,73 @@ PostgreSQL is not intended to be directly accessed by the browser.
 ## 15. Database Relationships
 
 The primary data relationships are:
-
 ```text
+
                          ┌─────────────────────┐
                          │       users         │
                          ├─────────────────────┤
                          │ id (PK)             │
                          │ username            │
-                         │ ...                 │
+                         │ hashed_password     │
+                         │ role                │
                          └──────────┬──────────┘
                                     │
-                   ┌────────────────┴────────────────┐
-                   │                                 │
-                   │ 1:N                             │ 1:N
-                   ▼                                 ▼
-          ┌─────────────────┐              ┌─────────────────┐
-          │      chats      │              │      files      │
-          ├─────────────────┤              ├─────────────────┤
-          │ id (PK)         │              │ id (PK)         │
-          │ user_id (FK)    │              │ user_id (FK)    │
-          │ session_id      │              │ ...             │
-          └────────┬────────┘              │ encryption_...  │
-                   │                       └────────┬────────┘
-                   │ 1:N                            │
-                   ▼                                ▼
-          ┌─────────────────┐              ┌──────────────────────┐
-          │  chat_messages  │              │   encryption_keys    │
-          ├─────────────────┤              ├──────────────────────┤
-          │ id (PK)         │              │ id (PK)              │
-          │ chat_id (FK)    │              │ file_id (FK)         │
-          │ role            │              │ key_algorithm        │
-          │ content         │              │ encrypted_key        │
-          └─────────────────┘              └──────────────────────┘
-
-          Files are also associated with:
-                 │
-                 ├──► permissions
-                 │
-                 └──► file_access_logs
+             ┌──────────────────────┼─────────────────────────┐
+             │                      │                         │
+             │ 1:N                  │ 1:N                     │ 1:N
+             ▼                      ▼                         ▼
+   ┌─────────────────┐    ┌─────────────────┐      ┌────────────────────┐
+   │  chat_history   │    │      files      │      │ file_access_logs   │
+   ├─────────────────┤    ├─────────────────┤      ├────────────────────┤
+   │ id (PK)         │    │ id (PK)         │      │ id (PK)            │
+   │ user_id (FK)    │    │ owner_id (FK)   │      │ user_id (FK)       │
+   │ session_id      │    │ ...             │      │ file_id (FK)       │
+   │ message         │    └────────┬────────┘      │ action             │
+   │ response        │             │               └────────────────────┘
+   └────────┬────────┘             │
+            │                      │ 1:N
+            │ 1:N                  │
+            ▼                      │
+   ┌─────────────────┐             │
+   │  chat_messages  │             │
+   ├─────────────────┤             │
+   │ id (PK)         │             │
+   │ chat_id (FK)    │             │
+   │ role            │             │
+   │ content         │             │
+   └─────────────────┘             │
+                                   │
+                         ┌─────────┴──────────┐
+                         │                    │
+                         │ 1:N                │ 1:N
+                         ▼                    ▼
+                ┌─────────────────┐   ┌─────────────────────┐
+                │ encryption_keys │   │ file_permissions    │
+                ├─────────────────┤   ├─────────────────────┤
+                │ id (PK)         │   │ id (PK)             │
+                │ file_id (FK)    │   │ file_id (FK)        │
+                │ key_algorithm   │   │ shared_by (FK)      │
+                │ encrypted_key   │   │ shared_with_user_id │
+                └─────────────────┘   └─────────────────────┘
 ```
 
 The exact cardinality of relationships should be considered authoritative only
 if it is enforced by the application's database schema.
+
+### Cross-Service User References
+
+The Auth Service owns the `users` table and is the authoritative source for
+user identity data.
+
+The File Service stores references to Auth Service users in its own database
+tables. PostgreSQL enforces the corresponding foreign-key relationships to
+`users.id`, including `ON DELETE CASCADE`.
+
+At the application layer, the File Service does not depend on the Auth
+Service's SQLAlchemy `users` model. User identity and user information are
+handled through the Auth Service/API.
+
+Detailed implementation guidance is documented in `development.md`.
 
 ---
 

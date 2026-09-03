@@ -48,6 +48,7 @@ def delete_file(db, file_id, owner_id):
         record.id,
         owner_id,
         "DELETE",
+        access_method="AUTHENTICATED",
     )
 
     # Delete the database record
@@ -71,7 +72,7 @@ def share_file(db, file_id, owner_id, shared_user_id, permission):
     db.refresh(record)
 
     # Audit the share action
-    create_audit_log(db, file_id, owner_id, "SHARE")
+    create_audit_log(db, file_id, owner_id, "SHARE", access_method="AUTHENTICATED",)
 
     return record
 
@@ -129,6 +130,7 @@ def upload_file(db, uploaded_file, owner_id):
         record.id,
         owner_id,
         "UPLOAD",
+        access_method="AUTHENTICATED",
     )
 
     return record

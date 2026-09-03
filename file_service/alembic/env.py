@@ -12,6 +12,7 @@ from app.models import file
 from app.models import encryption_key
 from app.models import audit
 from app.models import permission
+from app.models import shared_link
 
 
 config = context.config
