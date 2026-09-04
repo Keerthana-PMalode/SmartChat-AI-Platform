@@ -127,6 +127,226 @@ docker compose exec -T postgres psql \
 
 ---
 
+## Chat History Development
+
+The chat history also belongs to an authenticated user. The database
+relationships are:
+
+```text
+users
+  │
+  │ users.id ← chat_history.user_id
+  │           ON DELETE CASCADE
+  ▼
+chat_history
+  │
+  │ chat_history.id ← chat_messages.chat_id
+  │                   ON DELETE CASCADE
+  ▼
+chat_messages
+```
+
+- **chat_history.user_id** references **users.id** with **ON DELETE CASCADE**.
+- **chat_messages.chat_id** references **chat_history.id** with **ON DELETE CASCADE**.
+- Deleting a user deletes the user's chat-history records.
+- Deleting a chat-history record deletes its associated chat messages.
+
+The **chat_history** table represents the conversation/session:
+
+```text
+id
+user_id
+session_id
+timestamp
+```
+
+The **chat_messages** table stores individual messages:
+
+``` text
+id
+chat_id
+role
+content
+created_at
+```
+
+SmartChat currently supports these message roles:
+
+```text
+user
+chatbot
+```
+
+For example, a stored conversation may appear in PostgreSQL as:
+
+**chat_history**
+
+ id |   session_id     | user_id | timestamp
+----:|----------------:|--------:|-------------------------------
+  1 |  chat_test_UserA |      38 | 2026-09-04 12:53:54.622459+00
+
+with related messages:
+
+**chat_messages**
+
+ id | chat_id |  role   |  content  | created_at
+----:|--------:|--------:|----------:|------------------------------
+  1 |       1 | user    | Hiiiii    | 2026-09-04 12:53:54.622459+00
+  2 |       1 | chatbot | Helloooo  | 2026-09-04 12:53:54.622459+00
+
+The relationship is:
+
+```text
+chat_messages.chat_id
+        │
+        ▼
+chat_history.id
+```
+
+with:
+
+```text
+ON DELETE CASCADE
+```
+
+Therefore, deleting a chat-history record automatically deletes its
+associated messages.
+
+---
+
+## Inspect Chat History
+
+To inspect chat sessions:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT id, session_id, user_id, timestamp
+      FROM chat_history
+      ORDER BY id DESC;"
+```
+To inspect messages:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT id, chat_id, role, content, created_at
+      FROM chat_messages
+      ORDER BY id DESC;"
+```
+
+To inspect a complete conversation:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT h.id AS chat_id,
+             h.session_id,
+             h.user_id,
+             h.timestamp,
+             m.id AS message_id,
+             m.role,
+             m.content,
+             m.created_at
+      FROM chat_history h
+      LEFT JOIN chat_messages m
+        ON m.chat_id = h.id
+      WHERE h.id = <CHAT_ID>
+      ORDER BY m.id;"
+```
+---
+
+## Store Chat
+
+The Store Chat operation creates a chat-history record and the corresponding
+message records.
+
+Conceptually:
+
+```text
+Store Chat
+    │
+    ▼
+chat_history
+    │
+    ├──► chat_messages(role = user)
+    │
+    └──► chat_messages(role = chatbot)
+```
+The resulting API response contains the chat session metadata together with
+its messages.
+
+---
+
+## Chat Message Roles
+
+The current application uses:
+
+```text
+user
+chatbot
+```
+
+The role should be stored in **chat_messages.role**, while the actual message
+text is stored in **chat_messages.content**.
+
+Do not add **message** or **response** columns to **chat_history** for the current chat-history implementation.
+
+---
+
+## Chat Deletion
+
+Because of the foreign-key cascade:
+
+```text
+chat_history.id
+      │
+      ▼
+chat_messages.chat_id
+      │
+      └── ON DELETE CASCADE
+```
+
+deleting a chat session automatically removes its associated messages.
+
+This can be verified with:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "DELETE FROM chat_history
+      WHERE id = <CHAT_ID>;"
+```
+
+Then:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT *
+      FROM chat_messages
+      WHERE chat_id = <CHAT_ID>;"
+```
+
+Expected result:
+
+```text
+0 rows
+```
+
+The above SQL command is intended only to verify the database-level
+`ON DELETE CASCADE` behavior.
+
+For normal application testing, chat deletion should be performed through the
+application/API rather than directly against PostgreSQL.
+
+---
+
 ## Database Backup
 
 Create a PostgreSQL database dump from the running container:
@@ -212,9 +432,11 @@ preserve the service boundary. User identity and user information should be
 validated through the Auth Service/API rather than through direct use of the
 Auth Service's ORM models.
 
-The shared PostgreSQL database currently enforces foreign-key constraints
-from File Service user-reference columns to `users.id`, with `ON DELETE
-CASCADE`. These database constraints provide referential integrity and
+The current database schema defines foreign-key relationships from the
+applicable File Service user-reference columns to `users.id`, with
+`ON DELETE CASCADE`. 
+
+These database constraints provide referential integrity and
 cascading deletion independently of whether the corresponding relationship
 is represented as a SQLAlchemy ORM foreign key.
 
@@ -222,16 +444,32 @@ is represented as a SQLAlchemy ORM foreign key.
 
 ## Audit Log Verification
 
-The File Service records file-related operations in the
-file_access_logs table.
+The File Service records successful file-related operations in the
+`file_access_logs` table.
 
-To inspect recent file access records:
+Phase 2 audit logging distinguishes between authenticated access and
+share-link access using the `access_method` field.
+
+The audit context is:
+
+```text
+AUTHENTICATED
+    user_id       = required
+    share_link_id = NULL
+
+SHARE_LINK
+    user_id       = NULL
+    share_link_id = required
+```
+
+To inspect recent audit records:
 
 ```bash
 docker compose exec -T postgres psql \
   -U chatbot \
   -d chatbot \
-  -c "SELECT id, file_id, user_id, action, ip_address, access_time
+  -c "SELECT id, file_id, user_id, share_link_id,
+      access_method, action, ip_address, access_time
       FROM file_access_logs
       ORDER BY id DESC;"
 ```
@@ -242,24 +480,37 @@ To inspect the audit history for a specific file:
 docker compose exec -T postgres psql \
   -U chatbot \
   -d chatbot \
-  -c "SELECT id, file_id, user_id, action, ip_address, access_time
+  -c "SELECT id, file_id, user_id, share_link_id,
+      access_method, action, ip_address, access_time
       FROM file_access_logs
       WHERE file_id = 25
       ORDER BY id DESC;"
 ```
 
-The ip_address field records the address observed by the application. When
-requests pass through Docker or Nginx, the recorded address may represent a
-Docker gateway or proxy rather than the original client IP.
+Successful authenticated downloads are recorded with:
+
+```text
+user_id       = authenticated user's ID
+share_link_id = NULL
+access_method = AUTHENTICATED
+```
+
+Successful share-link downloads are recorded with:
+
+```text
+user_id       = NULL
+share_link_id = ID of the share link
+access_method = SHARE_LINK
+```
+
+The database enforces these access-context relationships through the
+ck_file_access_logs_access_context CHECK constraint.
 
 For detailed audit-log test procedures, see the Testing Guide.
 
 ---
 
 ## User Deletion
-
-
-### User Deletion
 
 User deletion is currently implemented as a **hard delete**.
 
@@ -297,32 +548,28 @@ can safely be returned in the response.
 The current database schema uses PostgreSQL foreign-key cascade rules for
 user-related records.
 
+The **chat_messages.chat_id** foreign key references **chat_history.id** with **ON DELETE CASCADE**.
+
 The relevant relationships include:
 
 ```text
 users
  │
- ├──► chat_history
- │       user_id
+ ├── 1:N ──► chat_history
+ │             │
+ │             │ ON DELETE CASCADE
+ │             ▼
+ │         chat_messages
  │
- ├──► files
- │       owner_id
- │       │
- │       ├──► encryption_keys
- │       │       file_id
- │       │
- │       ├──► file_permissions
- │       │       file_id
- │       │
- │       └──► file_access_logs
- │               file_id
+ ├── 1:N ──► files
+ │             │
+ │             ├──► encryption_keys
+ │             ├──► file_permissions
+ │             └──► file_access_logs
  │
- ├──► file_access_logs
- │       user_id
+ ├── 1:N ──► file_access_logs
  │
- └──► file_permissions
-         shared_by
-         shared_with_user_id
+ └── 1:N ──► file_permissions
 ```
 
 When a user is deleted, PostgreSQL performs the configured cascading deletes.
@@ -332,8 +579,12 @@ deleted. The dependent records associated with those files, such as
 encryption keys, permissions, and file-access logs, are then removed through
 their corresponding cascade relationships.
 
-User-associated chat history and user-associated audit records are also
-removed through their direct foreign-key relationships.
+User-associated chat history is removed through the `chat_history.user_id`
+foreign key. Associated `chat_messages` records are then removed through the
+`chat_messages.chat_id` → `chat_history.id` `ON DELETE CASCADE` relationship.
+
+User-associated audit records are removed through their applicable foreign-key
+relationships.
 
 ### Current Deletion Flow
 
@@ -353,19 +604,21 @@ Auth Service
   ├──► Prevent deletion of last administrator
   │
   └──► DELETE users row
-             │
-             ▼
-        PostgreSQL
-             │
-             ├──► Cascade chat history
-             ├──► Cascade owned files
-             │       │
-             │       ├──► Cascade encryption keys
-             │       ├──► Cascade file permissions
-             │       └──► Cascade file access logs
-             │
-             ├──► Cascade user file permissions
-             └──► Cascade user access logs
+       │
+       ▼
+       PostgreSQL
+       │
+       ├──► Cascade chat_history
+       │       │
+       │       └──► Cascade chat_messages
+       │
+       ├──► Cascade owned files
+       │       ├──► encryption keys
+       │       ├──► permissions
+       │       └──► file access logs
+       │
+       ├──► Cascade user file permissions
+       └──► Cascade user access logs
 ```
 
 ### Verify User Deletion
@@ -388,11 +641,30 @@ docker compose exec -T postgres psql \
   -U chatbot \
   -d chatbot \
   -c "SELECT
-      (SELECT count(*) FROM chat_history WHERE user_id = <USER_ID>) AS chat_history,
-      (SELECT count(*) FROM files WHERE owner_id = <USER_ID>) AS files,
-      (SELECT count(*) FROM file_access_logs WHERE user_id = <USER_ID>) AS access_logs,
-      (SELECT count(*) FROM file_permissions WHERE shared_by = <USER_ID>) AS permissions_owned,
-      (SELECT count(*) FROM file_permissions WHERE shared_with_user_id = <USER_ID>) AS permissions_received;"
+    (SELECT count(*)
+     FROM chat_history
+     WHERE user_id = <USER_ID>) AS chat_history,
+
+    (SELECT count(*)
+     FROM chat_messages m
+     JOIN chat_history h ON h.id = m.chat_id
+     WHERE h.user_id = <USER_ID>) AS chat_messages,
+
+    (SELECT count(*)
+     FROM files
+     WHERE owner_id = <USER_ID>) AS files,
+
+    (SELECT count(*)
+     FROM file_access_logs
+     WHERE user_id = <USER_ID>) AS access_logs,
+
+    (SELECT count(*)
+     FROM file_permissions
+     WHERE shared_by = <USER_ID>) AS permissions_owned,
+
+    (SELECT count(*)
+     FROM file_permissions
+     WHERE shared_with_user_id = <USER_ID>) AS permissions_received;"
 ```
 
 Delete the user through the application endpoint rather than directly through
@@ -461,8 +733,6 @@ database record and deletion of its physical encrypted object are handled
 consistently. This may require an application-level file cleanup mechanism,
 rather than relying solely on PostgreSQL ON DELETE CASCADE.
 
-**"Important Storage Consideration"**
-
 PostgreSQL test proved:
 
 ```text
@@ -488,8 +758,10 @@ So current implementation has successfully demonstrated database-level cascading
 The current development implementation intentionally uses hard deletion.
 Hard deletion is not inherently unproduction-ready. It is a valid production policy if the product intentionally wants account deletion to erase the user's application data.
 
-**Important Noe**
-> Current policy: hard delete user and associated application data. Production retention requirements have not yet been finalized.
+### Important Note
+
+> - Current policy: hard delete user and associated application data. 
+> - Production retention requirements have not yet been finalized.
 
 It does not currently implement:
 
@@ -502,4 +774,3 @@ It does not currently implement:
 
 These concerns should be addressed before defining a production data-retention
 and account-deletion policy.
-

@@ -33,9 +33,9 @@ the private Docker Compose network using service names.
              │        ┌──────────────┐          │
              │        │  Rasa SDK    │          │
              │        │    :5055     │          │
-             │        └──────┬───────┘          │
-             │               │                  │
-             └───────────────┼──────────────────┘
+             │        └──────────────┘          │
+             │                                  │
+             └───────────────┬──────────────────┘
                              │
                              ▼
                     ┌──────────────────┐
@@ -91,16 +91,16 @@ For example:
 ```text
 Browser
    │
-   │ /auth/*
    ▼
 Nginx :8081
    │
-   ▼
-auth:8000
+   ├──► auth:8000
+   ├──► rasa:5006
+   └──► file_service:8001
 ```
 
-Backend services communicate using Docker Compose service names rather than
-localhost.
+Published backend ports may be used for development and troubleshooting but
+are not required for normal application traffic.
 
 ---
 
@@ -112,7 +112,7 @@ Nginx performs two primary roles:
 
 - Reverse-proxies API requests to backend services.
 
-The browser sends application requests to Nginx:
+The browser therefore has a single application entry point:
 
 ```text
 Browser
@@ -126,11 +126,8 @@ Nginx :8081
    └──► File Service
 ```
 
-This provides a single application entry point while keeping backend services
+This provides a unified browser-facing endpoint while keeping backend services
 logically separated.
-
-Individual backend ports may be published by Docker Compose for development
-and troubleshooting, but they are not required for normal application traffic.
 
 ---
 
@@ -143,43 +140,16 @@ Its responsibilities include:
 - User registration
 - User login
 - Password hashing
-- JWT generation
-- JWT validation
+- JWT generation and validation
 - Role-based authorization
 - User administration
-- User deletion and account lifecycle management
+- User lifecycle management
 
 After successful authentication, the Auth Service issues a JWT.
 
-The frontend sends the token with protected API requests:
+Protected requests use:
 
 ```http
-Authorization: Bearer <JWT>
-```
-
-The authentication flow is:
-
-```text
-Browser
-   │
-   │ Login credentials
-   ▼
-Nginx :8081
-   │
-   ▼
-Auth Service :8000
-   │
-   ├──► Validate credentials
-   ├──► Verify password
-   └──► Generate JWT
-             │
-             ▼
-          Browser
-             │
-             ▼
-       Store authToken
-             │
-             ▼
 Authorization: Bearer <JWT>
 ```
 
@@ -190,40 +160,32 @@ The JWT contains authentication information such as:
 - Role
 - Expiration time
 
-The frontend stores the token using the authToken key in browser
-localStorage.
+The frontend stores the JWT using the authToken key in browser localStorage.
 
----
-
-## 6. Authorization Model
-
-Protected resources are accessed only after JWT validation.
-
-The authenticated user's identity is derived from the validated token.
+The authorization flow is:
 
 ```text
-Authorization: Bearer <JWT>
-              │
-              ▼
-       JWT Validation
-              │
-              ▼
-       Authenticated User
-              │
-              ▼
-      Authorization Check
-              │
-       ┌──────┴──────┐
-       ▼             ▼
-   Authorized     Rejected
+Request
+   │
+   ▼
+JWT Validation
+   │
+   ▼
+Authenticated User
+   │
+   ▼
+Authorization Check
+   │
+   ├──► Authorized
+   │
+   └──► Rejected
 ```
 
-Authorization is applied to user-specific resources such as chat history and
-files.
+User-specific resources are authorized using the authenticated user's identity.
 
 ---
 
-## 7. Chatbot Architecture
+## 6. Chat Architecture
 
 Rasa provides the conversational AI layer.
 
@@ -236,7 +198,7 @@ The Rasa deployment consists of:
 
 The request flow is:
 
-```
+```text
 Browser
    │
    │ /rasa/*
@@ -246,23 +208,18 @@ Nginx :8081
    ▼
 Rasa :5006
    │
-   ├──► Dialogue / NLU processing
-   │
    └──► Rasa SDK :5055
-             │
-             ▼
-        Custom Actions
+              │
+              ▼
+         Custom Actions
 ```
 
-The Rasa SDK provides custom actions used by the Rasa Server.
+### Chat Sessions
 
----
+SmartChat supports authenticated chatbot sessions only.
 
-## 8. Authenticated Chat Sessions
-
-SmartChat does not support guest or unauthenticated chatbot sessions.
-
-A chatbot session is associated with an authenticated registered user.
+Each chat session belongs to an authenticated user and contains multiple
+messages.
 
 The logical relationship is:
 
@@ -271,83 +228,91 @@ User
  │
  │ 1:N
  ▼
-Chat
+chat_history
  │
  │ 1:N
  ▼
-Chat Message
+chat_messages
 ```
 
-A chat contains a session_id identifying an individual conversation.
+**chat_history** represents the conversation/session.
 
-Chat records are associated with the authenticated user's user_id.
+**chat_messages** stores the individual messages belonging to that session.
+
+A **chat_history** record contains:
+
+```text
+id
+user_id
+session_id
+timestamp
+```
+
+A **chat_messages** record contains:
+
+```text
+id
+chat_id
+role
+content
+created_at
+```
+
+Supported message roles are:
+
+- user
+- chatbot
+
+The database relationship is:
+
+```text
+chat_messages.chat_id
+        │
+        │ FK
+        ▼
+chat_history.id
+```
+
+with:
+
+```text
+ON DELETE CASCADE
+```
+
+Therefore, deleting a chat-history record also deletes its associated
+messages.
+
+### Chat Isolation
+
+Chat-history access is scoped to the authenticated user.
+
+```text
+JWT
+ │
+ ▼
+authenticated user_id
+ │
+ ├──► session_id
+ │
+ ▼
+authorized chat history
+```
+
+A user cannot access another user's chat history by supplying another user's
+session identifier.
 
 ---
 
-## 9. Chat History Isolation
-
-Chat-history operations require a valid JWT.
-
-### Save Chat History
-
-```text
-POST /chat/history
-        │
-        ▼
-JWT Validation
-        │
-        ▼
-current_user.id
-        │
-        ▼
-Create Chat History
-        │
-        ├──► user_id
-        ├──► session_id
-        ├──► message
-        └──► response
-```
-
-### Retrieve Chat History
-
-```text
-GET /chat/history/{session_id}
-        │
-        ▼
-JWT Validation
-        │
-        ▼
-current_user.id
-        │
-        ▼
-Query:
-session_id = requested session
-AND
-user_id = authenticated user
-        │
-        ▼
-Return user's chat history
-```
-
-The combination of session_id and authenticated user_id prevents a user
-from retrieving another user's chat history by supplying another user's
-session ID.
-
-Unauthenticated requests are rejected.
-
----
-
-## 10. File Service Architecture
+## 7. File Service Architecture
 
 The File Service is implemented using FastAPI.
 
-It provides:
+Its responsibilities include:
 
 - File upload
 - File download
 - File deletion
-- File encryption
-- File decryption
+- File encryption and decryption
 - File sharing
 - Permission management
 - File ownership checks
@@ -372,215 +337,204 @@ File Service :8001
 
 ---
 
-## 11. File Ownership and Sharing
-
-Each file is associated with an owning user.
-
-Authorized users may share files with other registered users.
-
-The sharing flow is:
-
-```text
-File Owner
-    │
-    │ Share File
-    ▼
-File Service
-    │
-    ├──► Validate JWT
-    ├──► Verify ownership / authorization
-    ├──► Create permission
-    └──► Record audit event
-```
-
-Before protected file operations such as downloading, the File Service checks
-whether the authenticated user owns the file or has an appropriate permission.
-
----
-
-## 12. File Encryption Architecture
+## 8. File Encryption and Sharing
 
 Uploaded files are encrypted using a unique Fernet encryption key.
 
-The file encryption key is not stored as plaintext in the database.
-
-The encryption process is:
+The file encryption key is protected using the server-side
+**FILE_MASTER_KEY**.
 
 ```text
 Uploaded File
       │
       ▼
-Generate unique Fernet file key
+Generate unique Fernet key
       │
       ▼
-Encrypt file using Fernet
+Encrypt file
       │
       ▼
-Store encrypted file
+Encrypted File Storage
+```
+
+The encryption key is wrapped using **FILE_MASTER_KEY**:
+
+```text
+File Encryption Key
       │
       ▼
-Wrap file key using FILE_MASTER_KEY
+Wrapped using FILE_MASTER_KEY
       │
       ▼
-Store wrapped key
+PostgreSQL
       │
       ▼
 encryption_keys
 ```
 
-The server-side FILE_MASTER_KEY protects the stored file encryption keys.
-
 The architecture therefore separates encrypted file contents from their
 protected encryption keys.
 
----
+### File Sharing
 
-## 13. File Decryption Architecture
+The File Service supports two sharing mechanisms:
 
-When an authorized user downloads a file:
+- Direct user-to-user sharing through file_permissions.
+- Share-link access through shared_links.
+
+Direct sharing requires authenticated authorization.
+
+Share-link access uses a share-link token and does not require a JWT.
 
 ```text
-Browser
-   │
-   │ GET /files/{id}/download
-   │ Authorization: Bearer <JWT>
-   ▼
-Nginx
-   │
-   ▼
-File Service
-   │
-   ├──► Validate JWT
-   ├──► Identify authenticated user
-   ├──► Check ownership / permission
-   ├──► Retrieve encrypted file
-   ├──► Retrieve wrapped key
-   ├──► Unwrap key using FILE_MASTER_KEY
-   ├──► Decrypt file
-   └──► Return original file
+File Owner
+    │
+    ├──► Direct Permission
+    │       └──► file_permissions
+    │
+    └──► Share Link
+            └──► shared_links
 ```
 
-This ensures that decryption occurs only after authentication and
-authorization checks.
+Both mechanisms ultimately access the same encrypted file storage.
 
 ---
 
-## 14. Database Architecture
+## 9. Database Architecture
 
 PostgreSQL is the primary persistent data store.
 
-The database is available internally as:
+It is available internally as:
 
 ```text
 postgres:5432
 ```
 
-It stores application data associated with:
+PostgreSQL stores application data associated with:
 
 - Users
-- Chats
+- Chat sessions
 - Chat messages
 - Files
 - Encryption keys
-- Permissions
+- File permissions
+- Share links
 - Audit logs
 
 PostgreSQL is not intended to be directly accessed by the browser.
 
 ---
 
-## 15. Database Relationships
+## 10. Database Relationships
 
-The primary data relationships are:
+The primary database relationships are:
+
 ```text
+users
+  │
+  ├── 1:N ──► chat_history
+  │               │
+  │               └── 1:N ──► chat_messages
+  │
+  ├── 1:N ──► files
+  │               │
+  │               ├── 1:N ──► encryption_keys
+  │               ├── 1:N ──► file_permissions
+  │               ├── 1:N ──► shared_links
+  │               └── 1:N ──► file_access_logs
+  │
+  ├── 1:N ──► file_permissions
+  │
+  └── 1:N ──► file_access_logs
 
-                         ┌─────────────────────┐
-                         │       users         │
-                         ├─────────────────────┤
-                         │ id (PK)             │
-                         │ username            │
-                         │ hashed_password     │
-                         │ role                │
-                         └──────────┬──────────┘
-                                    │
-             ┌──────────────────────┼─────────────────────────┐
-             │                      │                         │
-             │ 1:N                  │ 1:N                     │ 1:N
-             ▼                      ▼                         ▼
-   ┌─────────────────┐    ┌─────────────────┐      ┌────────────────────┐
-   │  chat_history   │    │      files      │      │ file_access_logs   │
-   ├─────────────────┤    ├─────────────────┤      ├────────────────────┤
-   │ id (PK)         │    │ id (PK)         │      │ id (PK)            │
-   │ user_id (FK)    │    │ owner_id (FK)   │      │ user_id (FK)       │
-   │ session_id      │    │ ...             │      │ file_id (FK)       │
-   │ message         │    └────────┬────────┘      │ action             │
-   │ response        │             │               └────────────────────┘
-   └────────┬────────┘             │
-            │                      │ 1:N
-            │ 1:N                  │
-            ▼                      │
-   ┌─────────────────┐             │
-   │  chat_messages  │             │
-   ├─────────────────┤             │
-   │ id (PK)         │             │
-   │ chat_id (FK)    │             │
-   │ role            │             │
-   │ content         │             │
-   └─────────────────┘             │
-                                   │
-                         ┌─────────┴──────────┐
-                         │                    │
-                         │ 1:N                │ 1:N
-                         ▼                    ▼
-                ┌─────────────────┐   ┌─────────────────────┐
-                │ encryption_keys │   │ file_permissions    │
-                ├─────────────────┤   ├─────────────────────┤
-                │ id (PK)         │   │ id (PK)             │
-                │ file_id (FK)    │   │ file_id (FK)        │
-                │ key_algorithm   │   │ shared_by (FK)      │
-                │ encrypted_key   │   │ shared_with_user_id │
-                └─────────────────┘   └─────────────────────┘
+shared_links
+  │
+  └── 1:N ──► file_access_logs
 ```
 
-The exact cardinality of relationships should be considered authoritative only
-if it is enforced by the application's database schema.
+### Chat Deletion Cascade
+
+The chat-specific foreign-key relationships are:
+
+```text
+chat_history.user_id
+    ─────► users.id
+            ON DELETE CASCADE
+
+chat_messages.chat_id
+    ─────► chat_history.id
+            ON DELETE CASCADE
+```
+
+Therefore, deleting a user cascades to the user's chat-history records, and
+deleting a chat-history record cascades to its associated chat messages.
+
+```text
+Delete User
+    │
+    ▼
+chat_history records
+    │
+    ▼
+chat_messages records
+```
+
+This ensures that user deletion does not leave orphaned chat sessions or
+messages.
 
 ### Cross-Service User References
 
-The Auth Service owns the `users` table and is the authoritative source for
-user identity data.
+- The Auth Service owns the **users** table and is the authoritative source for
+user identity.
 
-The File Service stores references to Auth Service users in its own database
-tables. PostgreSQL enforces the corresponding foreign-key relationships to
-`users.id`, including `ON DELETE CASCADE`.
+- The File Service stores references to Auth Service users in its own tables.
 
-At the application layer, the File Service does not depend on the Auth
-Service's SQLAlchemy `users` model. User identity and user information are
-handled through the Auth Service/API.
+- The File Service does not depend on the Auth Service's SQLAlchemy **users**
+model. User identity is handled through the Auth Service/API.
 
-Detailed implementation guidance is documented in `development.md`.
+- PostgreSQL currently enforces the relevant foreign-key relationships to
+**users.id**, including **ON DELETE CASCADE**.
 
 ---
 
-## 16. Audit Logging
+## 11. Audit Logging
 
-File-related operations can be recorded in the file_access_logs table.
+The File Service records successful file-related operations in the
+**file_access_logs** table.
 
-Audit records may contain:
+The audit log contains:
 
-- User ID
-- File ID
-- Action
-- IP address
-- Access time
+- file_id
+- user_id
+- share_link_id
+- access_method
+- action
+- ip_address
+- user_agent
+- access_time
 
-Typical operations include:
+Supported access methods are:
+
+- AUTHENTICATED
+- SHARE_LINK
+
+The access context is:
 
 ```text
-UPLOAD
-SHARE
-DOWNLOAD
+AUTHENTICATED
+    user_id       = authenticated user's ID
+    share_link_id = NULL
+
+SHARE_LINK
+    user_id       = NULL
+    share_link_id = ID of the share link
 ```
+
+The database enforces this invariant using the:
+
+- ck_file_access_logs_access_context
+
+CHECK constraint.
 
 The audit flow is:
 
@@ -588,33 +542,32 @@ The audit flow is:
 File Operation
       │
       ▼
-File Service
+Authenticate / Validate Access
       │
-      ├──► Authorization
-      ├──► Perform operation
-      └──► Record audit event
-                  │
-                  ▼
-          file_access_logs
+      ▼
+Authorization
+      │
+      ▼
+Perform Operation
+      │
+      ▼
+Record Successful Audit Event
+      │
+      ▼
+file_access_logs
 ```
 
-When the application runs behind Docker and Nginx, the backend may observe a
-Docker gateway or proxy address instead of the original client IP.
+Typical audited operations include:
 
-If original client IP logging is required, Nginx and the backend must be
-configured to securely forward and interpret trusted proxy headers such as:
+- UPLOAD
+- SHARE
+- DOWNLOAD
 
-```text
-X-Forwarded-For
-X-Real-IP
-```
-
-Only trusted proxy sources should be permitted to provide client-IP
-information.
+Only successful file operations are recorded.
 
 ---
 
-## 17. Storage Architecture
+## 12. Storage Architecture
 
 The platform uses persistent Docker volumes for PostgreSQL data and Rasa
 trained models.
@@ -627,25 +580,23 @@ Docker Volumes
       └──► Rasa Model Artifacts
 ```
 
-The documented volumes are:
-
-```text
-chatbot-project_postgres_data
-chatbot-project_rasa_models
-```
-
-Encrypted uploaded files are stored in File Service runtime storage and are
-excluded from version control.
-
-The runtime upload directory is:
+Encrypted uploaded files are stored separately in File Service runtime
+storage:
 
 ```text
 file_service/uploads/
 ```
 
+The encrypted files are excluded from version control.
+
+Database deletion does not automatically remove physical encrypted files from
+this runtime storage. Application-level cleanup is therefore required for
+complete file deletion.
+
 ---
 
-## 18. Configuration and Secrets
+## 13. Configuration and Secrets
+
 Environment-specific configuration is supplied through .env.
 
 Important configuration values include:
@@ -665,18 +616,18 @@ Production secrets must not be committed to version control.
 
 The most security-sensitive values are:
 
-- SECRET_KEY
-- FILE_MASTER_KEY
-- POSTGRES_PASSWORD
+```text
+SECRET_KEY
+FILE_MASTER_KEY
+POSTGRES_PASSWORD
+```
 
-FILE_MASTER_KEY is particularly important because it protects the wrapped
+**FILE_MASTER_KEY** is particularly important because it protects the stored
 file encryption keys.
 
 ---
 
-## 19. Security Boundaries
-
-The architecture provides several security boundaries.
+## 14. Security Boundaries
 
 ### Authentication
 
@@ -688,9 +639,9 @@ Request
    ▼
 JWT Validation
    │
-   ├── Valid ──────► Continue
+   ├──► Valid ──────► Continue
    │
-   └── Invalid ────► Reject
+   └──► Invalid ────► Reject
 ```
 
 ### Chat Data Isolation
@@ -698,30 +649,30 @@ JWT Validation
 Chat history is scoped to the authenticated user:
 
 ```text
-session_id
-     +
 authenticated user_id
-     │
-     ▼
-Authorized chat history
+        +
+session_id
+        │
+        ▼
+authorized chat history
 ```
 
 ### File Authorization
 
-File access requires both authentication and appropriate authorization:
+File access requires appropriate authentication and authorization:
 
 ```text
-JWT
- │
- ▼
-Authenticated User
- │
- ▼
-Ownership / Permission Check
- │
- ├── Authorized ──► File Operation
- │
- └── Unauthorized ──► Reject
+JWT / Share Link
+       │
+       ▼
+Access Identity
+       │
+       ▼
+Ownership / Permission / Link Validation
+       │
+       ├──► Authorized ──► File Operation
+       │
+       └──► Unauthorized ──► Reject
 ```
 
 ### File Encryption
@@ -734,13 +685,13 @@ File
  ▼
 Encrypted File
  │
- └──────────────────► Encrypted File Storage
+ └──► Encrypted File Storage
 ```
 ```text
 File Encryption Key
  │
  ▼
-Wrapped with FILE_MASTER_KEY
+Wrapped using FILE_MASTER_KEY
  │
  ▼
 PostgreSQL
@@ -748,41 +699,7 @@ PostgreSQL
 
 ---
 
-## 20. Development and Production Traffic
-
-The architecture distinguishes normal browser traffic from development
-access.
-
-Normal application traffic follows:
-
-```text
-Browser
-   │
-   ▼
-localhost:8081
-   │
-   ▼
-Nginx
-   │
-   ├──► auth:8000
-   ├──► rasa:5006
-   └──► file_service:8001
-```
-
-Development and troubleshooting may use published host ports such as:
-
-```http
-Auth Service:  http://localhost:8000/docs
-File Service:  http://localhost:8001/docs
-Rasa Server:   http://localhost:5006/
-```
-
-These published ports are convenience endpoints and should not be confused
-with the internal Docker service addresses.
-
----
-
-## 21. End-to-End Request Flows
+## 15. End-to-End Request Flows
 
 ### Authentication
 
@@ -800,7 +717,7 @@ Auth Service
 PostgreSQL
    │
    ▼
-  JWT
+JWT
    │
    ▼
 Browser
@@ -823,8 +740,7 @@ Rasa
    └──► Chat processing
 ```
 
-Chat-history persistence and retrieval are subject to authenticated
-user-scoped authorization.
+Chat-history persistence and retrieval are scoped to the authenticated user.
 
 ### File Upload
 
@@ -852,15 +768,15 @@ File Service
 ```text
 Browser
    │
-   │ JWT + file ID
+   │ JWT or share-link token
    ▼
 Nginx
    │
    ▼
 File Service
    │
-   ├──► Validate JWT
-   ├──► Check ownership / permission
+   ├──► Validate access
+   ├──► Check authorization
    ├──► Retrieve encrypted file
    ├──► Retrieve wrapped key
    ├──► Unwrap file key
@@ -870,58 +786,28 @@ File Service
 
 ---
 
-## 22. Architectural Principles
+## 16. Architectural Principles
 
 SmartChat follows these architectural principles:
 
-- Separation of concerns — authentication, file management, and
+- **Separation of concerns** — authentication, file management, and
 conversational AI are separate services.
-- Single browser-facing gateway — Nginx provides the normal application
+- **Single browser-facing gateway** — Nginx provides the normal application
 entry point.
-- Private service networking — backend services communicate using Docker
+- **Private service networking** — backend services communicate using Docker
 Compose service names.
-- Authenticated access — protected application functionality requires JWT
+- **Authenticated access** — protected functionality requires JWT
 authentication.
-- Per-user isolation — chat history is scoped to the authenticated user.
-- Encrypted file storage — uploaded files are encrypted before storage.
-- Protected encryption keys — file encryption keys are wrapped using
-FILE_MASTER_KEY.
-- Persistent storage — PostgreSQL and Rasa models use persistent storage.
-- Auditable operations — file-related operations can be recorded in audit
+- **Per-user isolation** — chat history is scoped to the authenticated user.
+- **Encrypted file storage** — uploaded files are encrypted before storage.
+- **Protected encryption keys** — file encryption keys are wrapped using
+**FILE_MASTER_KEY**.
+- **Persistent storage** — PostgreSQL and Rasa models use persistent storage.
+- **Auditable operations** — successful file operations are recorded in audit
 logs.
-- Development/production separation — published backend ports support
+- **Database-enforced audit integrity** — audit records enforce valid access
+contexts.
+- **Traceable sharing** — share-link access retains the specific share-link
+identifier used.
+- **Development/production separation** — published backend ports support
 troubleshooting while normal browser traffic uses Nginx.
-
----
-
-## 23. Architecture Summary
-
-The SmartChat AI Platform can be summarized as:
-
-```text
-Browser
-   │
-   ▼
-Nginx :8081
-   │
-   ├──► Auth Service :8000
-   │       │
-   │       └──► PostgreSQL
-   │
-   ├──► Rasa :5006
-   │       │
-   │       └──► Rasa SDK :5055
-   │
-   └──► File Service :8001
-           │
-           ├──► PostgreSQL
-           │
-           └──► Encrypted File Storage
-```
-
-Authentication is provided through JWTs, chat history is isolated by
-authenticated user identity, files are encrypted using per-file Fernet keys,
-and those keys are protected using FILE_MASTER_KEY.
-
-Docker Compose provides service orchestration and private service networking,
-while Nginx provides the unified browser-facing application gateway.

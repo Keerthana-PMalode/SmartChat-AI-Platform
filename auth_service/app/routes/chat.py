@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_current_user, get_db
-from app.models.chat import ChatHistory
+from app.models.chat import ChatHistory, ChatMessage
 from app.schemas.chat import ChatCreate, ChatResponse
 
 router = APIRouter()
@@ -16,16 +16,33 @@ def save_chat(
 ):
     chat_entry = ChatHistory(
         session_id=chat.session_id,
-        sender=chat.sender,
-        message=chat.message,
-        response=chat.response,
         user_id=current_user.id,
     )
 
-    print("CURRENT USER FROM JWT:")
-    print(current_user.id)
-
     db.add(chat_entry)
+
+    # Get chat_history.id before creating chat_messages
+    db.flush()
+
+    # Store user message
+    user_message = ChatMessage(
+        chat_id=chat_entry.id,
+        role="user",
+        content=chat.message,
+    )
+
+    db.add(user_message)
+
+    # Store chatbot response
+    if chat.response:
+        chatbot_message = ChatMessage(
+            chat_id=chat_entry.id,
+            role="chatbot",
+            content=chat.response,
+        )
+
+        db.add(chatbot_message)
+
     db.commit()
     db.refresh(chat_entry)
 

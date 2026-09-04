@@ -30,10 +30,235 @@
 
 ## 15. Security Testing
 
+---
+
 ## 4. Chat History Isolation Testing
 
 Chat history is restricted to authenticated users and is isolated by
-user_id.
+`user_id`.
+
+### 4.0 Chat History Storage Model
+
+Chat history is stored using:
+
+```text
+chat_history
+    │
+    └── 1:N
+          ▼
+     chat_messages
+```
+
+A chat_history record contains:
+
+```text
+id
+user_id
+session_id
+timestamp
+```
+
+A chat_messages record contains:
+
+```text
+id
+chat_id
+role
+content
+created_at
+```
+
+The supported roles are:
+
+```text
+user
+chatbot
+```
+
+For example, storing user message:
+
+```text
+Hiiiii
+```
+
+Chatbot response:
+
+```text
+Helloooo
+```
+should produce:
+
+chat_history
+
+```text
+id = 1
+user_id = 38
+session_id = "chat_test_UserA"
+```
+
+chat_messages
+
+```text
+id = 1
+chat_id = 1
+role = "user"
+content = "Hiiiii"
+
+id = 2
+chat_id = 1
+role = "chatbot"
+content = "Helloooo"
+```
+
+### 4.0.1 Verify Chat Persistence
+
+After a successful Store Chat request, verify the chat-history record:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT id, session_id, user_id, timestamp
+      FROM chat_history
+      ORDER BY id DESC
+      LIMIT 10;"
+```
+
+Then verify its messages:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT id, chat_id, role, content, created_at
+      FROM chat_messages
+      WHERE chat_id = <CHAT_ID>
+      ORDER BY id;"
+```
+
+**Expected Result:**
+
+The chat-history record should contain the authenticated user's ID and the
+requested session ID.
+
+The associated chat_messages records should contain:
+
+```text
+role = user
+content = original user message
+
+and:
+
+role = chatbot
+content = chatbot response
+```
+
+### 4.0.2 Verify Chat-to-Message Relationship
+
+Verify that every returned message belongs to the expected chat:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT h.id AS chat_id,
+             h.session_id,
+             h.user_id,
+             m.id AS message_id,
+             m.chat_id,
+             m.role,
+             m.content
+      FROM chat_history h
+      JOIN chat_messages m
+        ON m.chat_id = h.id
+      WHERE h.id = <CHAT_ID>
+      ORDER BY m.id;"
+```
+
+**Expected Result:**
+
+| chat_id | session_id | user_id | message_id | chat_id | role | content |
+|---:|---|---:|---:|---:|---|---|
+| 1 | chat_test_UserA | 38 | 1 | 1 | user | Hiiiii |
+| 1 | chat_test_UserA | 38 | 2 | 1 | chatbot | Helloooo |
+
+### 4.0.3 Verify Chat Message Cascade
+
+The chat_messages.chat_id foreign key references
+chat_history.id using ON DELETE CASCADE.
+
+Create or identify a test chat and record its message count:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT count(*)
+      FROM chat_messages
+      WHERE chat_id = <CHAT_ID>;"
+```
+
+Delete the chat-history record through the appropriate application/API
+operation.
+
+Then verify:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT count(*)
+      FROM chat_messages
+      WHERE chat_id = <CHAT_ID>;"
+```
+
+**Expected Result:**
+
+- 0
+
+This confirms that deleting the parent chat_history record also deletes
+the associated chat_messages records.
+
+### 4.0.4 Verify API Response Structure
+
+A successful Store Chat request should return the chat session together with
+its associated messages.
+
+Example:
+
+```json
+{
+  "id": 1,
+  "session_id": "chat_test_UserA",
+  "user_id": 38,
+  "timestamp": "2026-09-04T12:53:54.622459Z",
+  "messages": [
+    {
+      "id": 1,
+      "chat_id": 1,
+      "role": "user",
+      "content": "Hiiiii",
+      "created_at": "2026-09-04T12:53:54.622459Z"
+    },
+    {
+      "id": 2,
+      "chat_id": 1,
+      "role": "chatbot",
+      "content": "Helloooo",
+      "created_at": "2026-09-04T12:53:54.622459Z"
+    }
+  ]
+}
+```
+
+The response confirms that:
+
+- The chat is associated with the expected user_id.
+- The requested session_id is preserved.
+- Individual user and chatbot messages are stored separately.
+- Each message references the parent chat through chat_id.
+
+---
 
 ### 4.1 Authenticated Chat History Request
 
@@ -55,7 +280,7 @@ Authorization: Bearer <JWT>
 **Verification**
 
 The request was successfully authenticated using the JWT, and the chat
-history associated with the authenticated user was returned.
+history associated with the authenticated user's chat session was returned.
 
 This confirms that authenticated users can retrieve their own chat history.
 
@@ -116,6 +341,17 @@ AND
 user_id = authenticated user's ID
 ```
 
+Since abc123 belongs to User A, no chat history is returned for User B.
+
+**Result**
+
+```json
+HTTP/1.1 404 Not Found
+{
+  "detail": "No chat history found for this session"
+}
+```
+
 This prevents an authenticated user from retrieving another user's chat
 history by supplying that user's session_id.
 
@@ -140,6 +376,12 @@ An authorized file owner can share a file with another registered user.
 ```http
 POST /files/{file_id}/share
 Authorization: Bearer <OWNER_JWT>
+Content-Type: application/json
+
+{
+  "user_id": 35,
+  "permission": "READ"
+}
 ```
 
 **Expected Behavior**
@@ -154,10 +396,20 @@ A corresponding file_permissions record should be created.
 file_id              = ID of the shared file
 shared_with_user_id  = ID of the recipient
 permission           = READ
+shared_by            = ID of the user performing the share
 ```
 
-The sharing operation should also create an audit record when audit logging
-is enabled for the operation.
+The sharing operation should also create an audit record.
+
+**Expected Audit Record**
+
+```text
+action        = SHARE
+file_id       = ID of the shared file
+user_id       = ID of the user who performed the share
+share_link_id = NULL
+access_method = AUTHENTICATED
+```
 
 ---
 
@@ -180,15 +432,15 @@ Content-Type: application/json
 
 **Expected Response:**
 
-- Status: 200 OK
+- Status: HTTP 200 OK
 - Content-Type: application/json
-- Body: JSON object containing the created share-link details
+- Body contains the created share-link details.
 
 ```json
 {
-  "id": 4,
-  "file_id": 39,
-  "url": "/files/shared/whzMMBelaOF-QzTc_wizUF4hwzgndVaXvSIlcs_sNVk",
+  "id": 26,
+  "file_id": 41,
+  "url": "/files/shared/<secure-token>",
   "expires_at": null,
   "max_downloads": 1,
   "download_count": 0
@@ -197,15 +449,14 @@ Content-Type: application/json
 
 The generated share-link token must be a long, cryptographically secure, randomly generated value.
 
-Once created, the share link can be accessed through the share-link endpoint without requiring a JWT. The token itself is used to authorize access to the shared file.
+The share link can subsequently be accessed without a JWT. The token itself
+acts as the access credential.
 
 ---
 
 ### 7.3 Share-Link Database Verification
 
-After creating the share link, verify that the corresponding record has been persisted correctly in the database.
-
-**Verification Command:**
+After creating a share link, verify that the record has been persisted.
 
 ```bash
 docker compose exec -T postgres psql \
@@ -219,13 +470,15 @@ docker compose exec -T postgres psql \
 
 **Expected Result:**
 
+For example:
+
 The newly created share link should be stored with the expected file ID, token, expiration settings, download limit, download count, and creator ID.
 
 | id | file_id | token | expires_at | max_downloads | download_count | created_by | created_at |
 |----|---------|-------|------------|---------------|----------------|------------|------------|
 | 4 | 39 | `<random-secure-token>` | `NULL` | 1 | 0 | 34 | `2026-09-02 05:15:42+00` |
 
-The following values should be verified:
+Verify:
 
 ```text
 file_id         = ID of the file
@@ -234,11 +487,10 @@ expires_at      = requested expiration or NULL
 max_downloads   = requested limit or NULL
 download_count  = 0 immediately after creation
 created_by      = authenticated user's ID
-created_at      = timestamp  
+created_at      = creation timestamp  
 ```
 
-> Note: The token and created_at values are generated at runtime, so the exact  values will differ. 
-> The token stored in the database should correspond to the token returned in the API response.
+The token stored in the database must correspond to the token returned by the API.
 
 ---
 
@@ -247,7 +499,7 @@ created_at      = timestamp
 A valid share link should allow the file to be downloaded without an
 Authorization header.
 
-**Expected Request:**
+**Request:**
 
 ```http
 GET /files/shared/{token}
@@ -257,12 +509,11 @@ No JWT should be supplied.
 
 **Expected Result:**
 
-- Status: 200 OK
+- HTTP 200 OK
 
-The file should be successfully decrypted and returned.
+The encrypted file should be successfully read, decrypted, and returned.
 
-This confirms that share-link authentication is independent of normal JWT
-file-download authorization.
+A successful share-link download must also create an audit record.
 
 ---
 
@@ -276,7 +527,7 @@ docker compose exec -T postgres psql \
   -d chatbot \
   -c "SELECT id, download_count
       FROM shared_links
-      WHERE id = 4;"
+      WHERE id = <SHARE_LINK_ID>;"
 ```
 
 **Expected Result:**
@@ -287,12 +538,49 @@ After one successful share-link download:
 
 - download_count = 1
 
-The download count should increase only after the file has been successfully
-retrieved and decrypted.
+The count must increase only after the encrypted file has been successfully
+read and decrypted.
 
 ---
 
-### 7.6 Maximum Download Limit
+### 7.6 Share-Link Download Audit
+
+After a successful share-link download, verify the audit record.
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT id, file_id, user_id, share_link_id,
+      access_method, action, ip_address, user_agent, access_time
+      FROM file_access_logs
+      WHERE share_link_id = <SHARE_LINK_ID>
+      ORDER BY id DESC;"
+```
+
+**Expected Result:**
+
+```text
+user_id       = NULL
+share_link_id = actual share-link ID
+access_method = SHARE_LINK
+action        = DOWNLOAD
+```
+
+For example:
+
+| id | file_id | user_id | share_link_id | access_method | action     | ip_address   | access_time                       |
+|----|---------|---------|---------------|---------------|------------|--------------|-----------------------------------|
+| 63 | 25      | NULL    | 7             | SHARE_LINK    | `DOWNLOAD` | `172.20.0.1` | `2026-09-02 23:30:15.123456+00` |
+
+The share-link ID provides traceability to the specific link that was used.
+
+The downloader remains anonymous because no JWT identity is associated with
+the request.
+
+---
+
+### 7.7 Maximum Download Limit
 
 Create a share link with:
 
@@ -303,7 +591,7 @@ Create a share link with:
 }
 ```
 
-Perform the following requests:
+Perform:
 
 Download #1 → HTTP 200 OK
 Download #2 → HTTP 410 Gone
@@ -316,14 +604,16 @@ Download #2 → HTTP 410 Gone
 }
 ```
 
-**Verify the database:**
+Verify:
 
+```bash
 docker compose exec -T postgres psql \
   -U chatbot \
   -d chatbot \
   -c "SELECT id, download_count, max_downloads
       FROM shared_links
-      WHERE id = 4;"
+      WHERE id = <SHARE_LINK_ID>;"
+```
 
 **Expected:**
 
@@ -331,22 +621,38 @@ docker compose exec -T postgres psql \
 |----------------|---------------|
 | 1              | 1             |
 
+The second request must not create a new **SHARE_LINK** audit record.
+
 ---
 
-### 7.7 Share-Link Expiration
+### 7.8 Share-Link Expiration
 
 Create a share link with an expiration time in the past.
 
-Example:
+For example:
 
 ```json
 {
-  "expires_at": "2026-09-01T10:00:00",
+  "expires_at": "2026-09-01T10:00:00Z",
   "max_downloads": null
 }
 ```
 
-Attempt to access the link:
+The API should reject creation because the expiration time is not in the
+future.
+
+**Expected Result:**
+
+- HTTP 400 Bad Request
+
+```json
+{
+  "detail": "Expiration time must be in the future"
+}
+```
+
+For an already-created link whose expiration time has subsequently passed,
+attempt:
 
 ```http
 GET /files/shared/{token}
@@ -354,9 +660,7 @@ GET /files/shared/{token}
 
 **Expected Result:**
 
-- Status: HTTP 410 Gone
-
-**Response:**
+- HTTP 410 Gone
 
 ```json
 {
@@ -364,30 +668,15 @@ GET /files/shared/{token}
 }
 ```
 
-The download count must remain unchanged.
+The following must remain unchanged:
 
-**Verify:**
+- download_count
 
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT download_count
-      FROM shared_links
-      WHERE id = 6;"
-```
-
-**Expected:**
-
-download_count - 0
-
-This confirms that an expired link is rejected before a download is counted.
-
-The count must not increase after the limit has been reached.
+No new SHARE_LINK audit record should be created.
 
 ---
 
-### 7.8 Invalid Share-Link Token
+### 7.9 Invalid Share-Link Token
 
 Request a token that does not exist:
 
@@ -397,9 +686,7 @@ GET /files/shared/does-not-exist
 
 **Expected Result:**
 
-- Status: HTTP 404 Not Found
-
-**Expected Response:**
+- HTTP 404 Not Found
 
 ```json
 {
@@ -407,37 +694,63 @@ GET /files/shared/does-not-exist
 }
 ```
 
+No share-link audit record should be created.
+
 ---
 
-### 7.9 Unauthorized Share-Link Creation
+### 7.10 Failed Share-Link Download
+
+Temporarily change the storage_path for a share-linked file so that the
+physical encrypted file does not exist.
+
+**Request:**
+
+```http
+GET /files/shared/{token}
+```
+
+**Expected Result**
+
+- HTTP 404 Not Found
+
+```json
+{
+  "detail": "Stored file not found"
+}
+```
+
+Verify:
+
+- download_count = unchanged
+
+and verify that no new **SHARE_LINK** audit record was created.
+
+This confirms that only successful file access is audited.
+
+---
+
+### 7.11 Unauthorized Share-Link Creation
 
 A non-owner must not be able to create a share link for another user's file.
 
-**Example:**
+Example:
 
+```text
 Authenticated user = 35
 File owner         = 1
 File ID            = 35
+```
 
-The non-owner attempts:
+**Request:**
 
 ```http
 POST /files/35/share-link
 Authorization: Bearer <USER_35_JWT>
 ```
 
-**Actual Result:**
+**Expected Result:**
 
-- Status: HTTP 403 Forbidden
-
-The File Service log confirms:
-
-```text
-Share-link authorization: user=35, file_owner=1, file_id=35
-INFO: ... "POST /files/35/share-link HTTP/1.1" 403 Forbidden
-```
-
-**Expected Response:**
+- HTTP 403 Forbidden
 
 ```json
 {
@@ -445,49 +758,44 @@ INFO: ... "POST /files/35/share-link HTTP/1.1" 403 Forbidden
 }
 ```
 
-**Verification:**
-
 The authorization check compares:
 
-file.owner_id
+- file.owner_id
 
 against:
 
-current_user_id
+- current_user_id
 
-Only the file owner is currently permitted to create a share link.
-
-This confirms that possession of a valid JWT alone does not grant permission
-to create a share link for another user's file.
+Only the file owner may create a share link.
 
 ---
 
-### 7.10 Share-Link Access Does Not Require JWT
+### 7.12 Share-Link Access Does Not Require JWT
 
-A share link should be usable without:
+A valid share link must work without:
 
 ```http
 Authorization: Bearer <JWT>
 ```
 
-The following should succeed when the link is valid:
+The following is intentionally unauthenticated:
 
 ```http
 GET /files/shared/{token}
 ```
 
-This is intentionally different from:
+This differs from:
 
 ```http
 GET /files/{file_id}/download
 ```
 
 The normal download endpoint requires authenticated authorization, while the
-share-link endpoint uses the secure share token as the access credential.
+share-link endpoint uses the secure share token as its access credential.
 
 ---
 
-### 7.11 File Deletion and Share-Link Cascade
+### 7.13 File Deletion and Share-Link Cascade
 
 **Create:**
 
@@ -499,7 +807,7 @@ File
 
 Delete the file through the File Service.
 
-**Verify:**
+Verify:
 
 ```bash
 docker compose exec -T postgres psql \
@@ -512,7 +820,7 @@ docker compose exec -T postgres psql \
 
 **Expected Result:**
 
-0 rows
+- 0 rows
 
 This verifies:
 
@@ -525,10 +833,9 @@ files.id
 
 ---
 
-### 7.12 Share-Link Test Summary
+### 7.14 File Sharing Test Summary
 
 The current share-link implementation has been verified for:
-
 
 - Create valid share link          → **PASS**
 - Valid anonymous link download    → **PASS**
@@ -536,260 +843,382 @@ The current share-link implementation has been verified for:
 - Maximum download enforcement     → **PASS**
 - Expired link rejection           → **PASS**
 - Invalid token rejection          → **PASS**
-- Unauthorized link creation      → **PASS** (`403 Forbidden`)
+- Missing storage file → **PASS**
+- Unauthorized link creation → **PASS**
+- Share-link audit record → **PASS**
+- Failed share-link download creates no audit record → **PASS**
+- Expired link creates no audit record → **PASS**
+- Maximum-download rejection creates no audit record → **PASS**
 - File deletion cascade            → **PASS**
-
-File sharing should allow an authorized user to share a file with another
-registered user.
-
-**Share a File**
-
-Share a file with another user through the File Service.
-
-**Expected Behavior**
-
-The file should be successfully shared with the selected user.
-
-An audit log entry should be created for the sharing operation.
-
-**Expected Audit Record**
-
-```text
-action   = SHARE
-user_id  = ID of the user who performed the share
-file_id  = ID of the shared file
-```
-
-The user_id identifies the user who performed the sharing operation, while
-file_id identifies the file that was shared.
 
 ---
 
 ## 9. Audit Log Testing
 
-The File Service records file-related operations in the
-`file_access_logs` table.
+The File Service records successful file-related operations in the
+`file_access_logs` table. 
 
-Audit logging currently records the user, file, action, IP address, and time
-for operations performed by authenticated users.
+Phase 2 introduces explicit access-context tracking for authenticated and
+share-link downloads.
 
-## 9.1 Verify Download Log
+The audit schema distinguishes:
 
-Download file ID `25` as an authenticated user.
+```text
+AUTHENTICATED
+SHARE_LINK
+```
 
-After the download, query the audit log:
+The database also enforces the relationship between the access method and
+the associated identity.
+
+### 9.1 Audit Schema
+
+The file_access_logs table contains:
+
+```text
+file_id
+user_id
+share_link_id
+access_method
+action
+ip_address
+user_agent
+access_time
+```
+
+The access context follows these rules:
+
+```text
+AUTHENTICATED
+    user_id       = required
+    share_link_id = NULL
+
+SHARE_LINK
+    user_id       = NULL
+    share_link_id = required
+```
+
+user_id is therefore nullable because anonymous share-link downloads
+must be represented with:
+
+```text
+user_id = NULL
+```
+
+These rules are enforced at the database level by the 
+ck_file_access_logs_access_context CHECK constraint.
+
+This prevents invalid combinations from being inserted directly into the
+database.
+
+---
+
+### 9.2 Verify Authenticated Download Audit
+
+Download a file through:
+
+```http
+GET /files/{file_id}/download
+Authorization: Bearer <JWT>
+```
+
+After the download, query:
 
 ```bash
 docker compose exec -T postgres psql \
   -U chatbot \
   -d chatbot \
-  -c "SELECT id, file_id, user_id, action, ip_address, access_time
+  -c "SELECT id, file_id, user_id, share_link_id,
+      access_method, action, ip_address, access_time
       FROM file_access_logs
-      WHERE file_id = 25
+      WHERE file_id = <FILE_ID>
       ORDER BY id DESC;"
 ```
 
 **Expected Result:**
 
-A corresponding audit record should be present with:
+A successful authenticated download should contain:
 
 ```text
-action      = DOWNLOAD
-file_id     = 25
-user_id     = ID of the authenticated user who downloaded the file
-ip_address  = IP address observed by the application
-access_time = Timestamp when the download was recorded
+user_id       = authenticated user's ID
+share_link_id = NULL
+access_method = AUTHENTICATED
+action        = DOWNLOAD
 ```
 
 For example:
 
-### Access Log Record
+| id  | file_id | user_id | share_link_id | access_method | action   | ip_address  | access_time                       |
+|-----:|--------:|--------:|--------------:|---------------|----------|-------------|-----------------------------------|
+| 120  | 41      | 35    | NULL            | AUTHENTICATED    | DOWNLOAD | `172.20.0.1` | `2026-08-29 21:56:59.445285+00` |
 
-| id | file_id | user_id | action | ip_address | access_time |
-|----|---------|---------|--------|------------|-------------|
-| 59 | 25 | 23 | `DOWNLOAD` | `172.20.0.1` | `2026-08-29 21:56:59.445285+00` |
-
-> **IP Address:** Nginx is configured to forward the client IP using the
-> `X-Real-IP` and `X-Forwarded-For` headers. The recorded `ip_address` reflects
-> the address observed by the application. In the current Docker deployment,
-> `172.20.0.1` is the Nginx container address. If the application uses the
-> direct connection address rather than the forwarded headers, it will record
-> the Nginx container IP instead of the original client IP.
-
-> **Timestamp:** PostgreSQL is configured with the `Etc/UTC` timezone.
-> Therefore, `access_time` is displayed in UTC. The `+00` suffix indicates
-> UTC (`UTC+00:00`). To convert the timestamp to IST, add 5 hours and 30
-> minutes.
+The authenticated user's identity is recorded directly in user_id.
 
 ---
 
-### 9.2 Verify Share Log
+### 9.3 Verify Share-Link Download Audit
 
-After sharing a file with another user, query the audit logs for the file.
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, file_id, user_id, action, ip_address, access_time
-      FROM file_access_logs
-      WHERE file_id = 25
-      ORDER BY id DESC;"
-```
-
-**Expected Result:**
-
-A corresponding record should contain:
-
-```text
-action      = SHARE
-file_id     = 25
-user_id     = ID of the user who performed the share
-access_time = Timestamp when the share was recorded
-```
-
----
-
-### 9.3 Share-Link Download Audit Status
-
-Share-link downloads are different from authenticated downloads.
-
-**share-link request:**
+Download a file using:
 
 ```http
 GET /files/shared/{token}
 ```
 
-does not contain an authenticated user identity.
+No JWT is required.
 
-The current file_access_logs schema contains:
-
-```text
-user_id INTEGER NOT NULL
-```
-
-Therefore, the current audit implementation cannot safely record an
-anonymous share-link download with:
-
-```text
-user_id = NULL
-```
-
-and should not insert a fabricated user ID.
-
-The current share-link implementation therefore tracks download usage through:
-
-```text
-shared_links.download_count
-```
-
-but does not yet provide a complete anonymous audit record in
-file_access_logs.
-
-This is a known limitation of the current audit schema.
-
-**Future Share-Link Audit Design**
-
-A future implementation should distinguish between authenticated downloads
-and share-link downloads.
-
-Possible approaches include adding an access method:
-
-```text
-access_method = AUTHENTICATED
-access_method = SHARE_LINK
-```
-
-and allowing:
-
-```text
-user_id = NULL
-```
-
-for anonymous **share-link access**.
-
-For example:
-
-```text
-file_id       = 39
-user_id       = NULL
-action        = DOWNLOAD
-access_method = SHARE_LINK
-ip_address    = <observed IP>
-access_time   = <timestamp>
-```
-
-Another option is to record the **share-link ID**.
-
-```text
-file_id       = 39
-user_id       = NULL
-share_link_id = 4
-action        = DOWNLOAD
-ip_address    = <observed IP>
-access_time   = <timestamp>
-```
-
-The second approach provides stronger traceability because it identifies
-which specific share link was used.
-
-This should be implemented as a separate schema/design change rather than
-forcing the current user_id column to contain an incorrect identity.
-
----
-
-### 9.4 Verify Multiple File Operations
-
-Perform multiple operations on the same file, such as:
-
-```text
-UPLOAD
-SHARE
-DOWNLOAD
-```
-
-Then query:
+After a successful download, query:
 
 ```bash
 docker compose exec -T postgres psql \
   -U chatbot \
   -d chatbot \
-  -c "SELECT id, file_id, user_id, action, ip_address, access_time
+  -c "SELECT id, file_id, user_id, share_link_id,
+      access_method, action, ip_address, user_agent, access_time
       FROM file_access_logs
-      WHERE file_id = 25
+      WHERE share_link_id = <SHARE_LINK_ID>
       ORDER BY id DESC;"
 ```
 
-The audit log should contain separate records for the operations that are
-currently implemented by the File Service.
+**Expected Result:**
+
+```text
+user_id       = NULL
+share_link_id = actual share-link ID
+access_method = SHARE_LINK
+action        = DOWNLOAD
+```
+
+For example:
+
+| id | file_id | user_id | share_link_id | access_method | action     | ip_address   | access_time                       |
+|----|---------|---------|---------------|---------------|------------|--------------|-----------------------------------|
+| 63 | 25      | NULL    | 7             | SHARE_LINK    | `DOWNLOAD` | `172.20.0.1` | `2026-09-02 23:30:15.123456+00` |
+
+This identifies the exact share link used without incorrectly assigning the
+share-link creator as the downloader.
 
 ---
 
-### 9.5 Current Audit Limitations
+### 9.4 Verify Share Operation Audit
 
-The current file_access_logs.user_id column is:
+After sharing a file with another user, query:
 
-```text
-NOT NULL
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT id, file_id, user_id, share_link_id,
+      access_method, action, ip_address, access_time
+      FROM file_access_logs
+      WHERE file_id = <FILE_ID>
+      AND action = 'SHARE'
+      ORDER BY id DESC;"
 ```
 
-This is appropriate for authenticated file operations but prevents the
-current audit table from representing an anonymous share-link recipient.
-
-Do not use the share-link creator's created_by value as the user_id of a
-share-link downloader. The creator and downloader may be completely
-different people.
-
-The share-link creator is stored separately in:
+**Expected Result:**
 
 ```text
-shared_links.created_by
+action        = SHARE
+file_id       = ID of the shared file
+user_id       = ID of the user who performed the share
+share_link_id = NULL
+access_method = AUTHENTICATED
 ```
 
-while actual anonymous link usage is currently represented only by:
+The SHARE operation is performed by an authenticated user, so it uses the
+authenticated access context.
+
+---
+
+### 9.5 Successful Access Is Audited
+
+The system audits successful file access rather than every attempted
+request.
+
+For example:
+
+```text
+Successful authenticated download
+    → audit record created
+
+Successful share-link download
+    → audit record created
+
+Missing storage file
+    → no audit record
+
+Expired share link
+    → no audit record
+
+Maximum downloads reached
+    → no audit record
+
+Invalid share-link token
+    → no audit record
+```
+
+This ensures that the audit log represents actual successful access rather
+than merely attempted requests.
+
+---
+
+### 9.6 Share-Link Download Count and Audit Record
+
+A successful share-link download has two independent effects:
 
 ```text
 shared_links.download_count
+        +
+file_access_logs audit record
 ```
 
-A future audit enhancement can add explicit share-link access tracking.
+For example, after the first successful download:
+
+- shared_links.download_count = 1
+
+and:
+
+```text
+file_access_logs:
+    access_method = SHARE_LINK
+    share_link_id = <ID>
+    user_id       = NULL
+    action        = DOWNLOAD
+```
+
+Both should be verified after a successful request.
+
+A rejected request must not modify the download count or create a successful
+access audit record.
+
+---
+
+### 9.7 Verify Audit Context Invariants
+
+**Run:**
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT access_method,
+      COUNT(*) AS count,
+      COUNT(*) FILTER (WHERE user_id IS NULL) AS user_id_null,
+      COUNT(*) FILTER (WHERE share_link_id IS NULL) AS share_link_id_null
+      FROM file_access_logs
+      GROUP BY access_method
+      ORDER BY access_method;"
+```
+
+**Expected structure:**
+
+access_method | user_id_null | share_link_id_null
+--------------:|-------------:|------------------
+AUTHENTICATED |      0       |         all
+SHARE_LINK    |     all      |          0
+
+For the current data, for example:
+
+access_method | count | user_id_null | share_link_id_null
+--------------:|------:|-------------:|-------------------
+AUTHENTICATED |   9   |      0       |         9
+SHARE_LINK    |   5   |      5       |         0
+
+The exact counts will vary depending on the tests performed.
+
+---
+
+### 9.8 Database-Level Audit Constraint
+
+The database enforces the following access-context rules:
+
+```text
+AUTHENTICATED
+    user_id IS NOT NULL
+    share_link_id IS NULL
+
+SHARE_LINK
+    user_id IS NULL
+    share_link_id IS NOT NULL
+```
+
+The constraint is:
+
+- ck_file_access_logs_access_context
+
+It protects the audit invariant even when records are inserted or modified
+outside the application's **create_audit_log()** service.
+
+The Phase 2 migration is therefore a required part of the audit schema.
+
+---
+
+### 9.9 Audit Log IP Address
+
+The audit log records the IP address observed by the application.
+
+The authenticated download endpoint receives the request information through
+FastAPI's **Request** object.
+
+The current Docker deployment may show the reverse-proxy/container address,
+such as:
+
+```text
+172.20.0.1
+```
+
+rather than the original client address, depending on the proxy and
+application configuration.
+
+Verify:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT id, action, access_method, ip_address, access_time
+      FROM file_access_logs
+      ORDER BY id DESC
+      LIMIT 20;"
+```
+
+---
+
+### 9.10 Audit Log Timestamp
+
+access_time is generated by PostgreSQL.
+
+The current database uses **UTC**, so timestamps may appear with:
+
+```text
++00
+```
+
+The value represents UTC.
+
+For **IST**
+
+```text
+IST = UTC + 05:30
+```
+
+---
+
+### 9.11 Audit Test Summary
+
+The Phase 2 audit implementation has been verified for:
+
+- Authenticated download audit → **PASS**
+- Share-link download audit → **PASS**
+- Authenticated download stores **user_id** → **PASS**
+- Authenticated download stores **share_link_id** = NULL → **PASS**
+- Share-link download stores **user_id = NULL** → **PASS**
+- Share-link download stores actual **share_link_id** → **PASS**
+- Share-link download stores **access_method = SHARE_LINK** → **PASS**
+- Authenticated download stores **access_method = AUTHENTICATED** → **PASS**
+- SHARE operation audit → **PASS**
+- Failed storage access creates no audit record → **PASS**
+- Expired link creates no audit record → **PASS**
+- Maximum-download rejection creates no audit record → **PASS**
+- Database access-context constraint → **PASS**
+- Share-link download count increments only on successful access → **PASS**

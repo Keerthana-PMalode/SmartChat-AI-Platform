@@ -2,6 +2,8 @@ import hashlib
 import os
 import uuid
 
+from sqlalchemy import or_
+
 from app.core.storage import save_encrypted_file
 from app.models.file import File
 from app.models.permission import FilePermission
@@ -18,7 +20,17 @@ def get_user_files(db, user_id):
 
     return (
         db.query(File)
-        .filter(File.owner_id == user_id)
+        .outerjoin(
+            FilePermission,
+            FilePermission.file_id == File.id,
+        )
+        .filter(
+            or_(
+                File.owner_id == user_id,
+                FilePermission.shared_with_user_id == user_id,
+            )
+        )
+        .distinct()
         .order_by(File.uploaded_at.desc())
         .all()
     )

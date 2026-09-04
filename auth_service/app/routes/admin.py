@@ -1,6 +1,6 @@
 from app.core.auth import hash_password
 from app.core.dependencies import get_db, require_admin
-from app.models.chat import ChatHistory
+from app.models.chat import ChatHistory, ChatMessage
 from app.models.user import User
 from app.schemas.admin import CreateUserRequest, UpdateRoleRequest
 from app.schemas.chat import ChatCreate, ChatResponse
@@ -150,29 +150,55 @@ def store_chat(
     admin=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    # Ensure the user exists
     user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
 
-    # Create new chat record
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    # Create chat history/session record
     new_chat = ChatHistory(
         user_id=user.id,
         session_id=chat.session_id,
-        sender=chat.sender,  # or admin.username if you want to enforce admin identity
-        message=chat.message,
-        response=chat.response,
     )
 
-    # Persist to DB
     db.add(new_chat)
+
+    # Get generated chat_history.id
+    db.flush()
+
+    # Store user message
+    user_message = ChatMessage(
+        chat_id=new_chat.id,
+        role="user",
+        content=chat.message,
+    )
+
+    db.add(user_message)
+
+    # Store chatbot response
+    if chat.response:
+        chatbot_message = ChatMessage(
+            chat_id=new_chat.id,
+            role="chatbot",
+            content=chat.response,
+        )
+
+        db.add(chatbot_message)
+
     try:
         db.commit()
+        db.refresh(new_chat)
+
     except Exception:
         db.rollback()
-        raise HTTPException(status_code=500, detail="Database error")
+        raise HTTPException(
+            status_code=500,
+            detail="Database error",
+        )
 
-    db.refresh(new_chat)  # loads actual DB values (id, timestamp)
     return new_chat
 
 
