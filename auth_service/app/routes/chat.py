@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_current_user, get_db
+from app.core.dependencies import get_current_user, get_db, get_current_session
 from app.models.chat import ChatHistory, ChatMessage
 from app.schemas.chat import ChatCreate, ChatResponse
 
@@ -13,18 +13,29 @@ def save_chat(
     chat: ChatCreate,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
+    session_id=Depends(get_current_session),
 ):
-    chat_entry = ChatHistory(
-        session_id=chat.session_id,
-        user_id=current_user.id,
+    # Find the existing conversation for this user/session.
+    chat_entry = (
+        db.query(ChatHistory)
+        .filter(
+            ChatHistory.session_id == session_id,
+            ChatHistory.user_id == current_user.id,
+        )
+        .first()
     )
 
-    db.add(chat_entry)
+    # Create the conversation only for the first message.
+    if not chat_entry:
+        chat_entry = ChatHistory(
+            session_id=session_id,
+            user_id=current_user.id,
+        )
 
-    # Get chat_history.id before creating chat_messages
-    db.flush()
+        db.add(chat_entry)
+        db.flush()
 
-    # Store user message
+    # Store user message.
     user_message = ChatMessage(
         chat_id=chat_entry.id,
         role="user",
@@ -33,7 +44,7 @@ def save_chat(
 
     db.add(user_message)
 
-    # Store chatbot response
+    # Store chatbot response.
     if chat.response:
         chatbot_message = ChatMessage(
             chat_id=chat_entry.id,
@@ -49,7 +60,11 @@ def save_chat(
     return chat_entry
 
 
-@router.get("/chat/history/{session_id}", response_model=list[ChatResponse])
+
+@router.get(
+    "/chat/history/{session_id}",
+    response_model=list[ChatResponse],
+)
 def get_chat_history(
     session_id: str,
     db: Session = Depends(get_db),
@@ -64,10 +79,6 @@ def get_chat_history(
         .order_by(ChatHistory.timestamp.asc())
         .all()
     )
-
-    for chat in chats:
-        print("CHAT OBJECT:")
-        print(chat.__dict__)
 
     if not chats:
         raise HTTPException(

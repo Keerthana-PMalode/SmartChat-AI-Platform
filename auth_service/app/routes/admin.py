@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date
 from sqlalchemy.exc import IntegrityError
-from fastapi import HTTPException
 
 
 router = APIRouter()
@@ -158,20 +157,29 @@ def store_chat(
             detail="User not found",
         )
 
-    # Create chat history/session record
-    new_chat = ChatHistory(
-        user_id=user.id,
-        session_id=chat.session_id,
+    # Find existing conversation for this user/session
+    chat_entry = (
+        db.query(ChatHistory)
+        .filter(
+            ChatHistory.session_id == chat.session_id,
+            ChatHistory.user_id == user.id,
+        )
+        .first()
     )
 
-    db.add(new_chat)
+    # Create conversation only if this is the first message
+    if not chat_entry:
+        chat_entry = ChatHistory(
+            user_id=user.id,
+            session_id=chat.session_id,
+        )
 
-    # Get generated chat_history.id
-    db.flush()
+        db.add(chat_entry)
+        db.flush()
 
     # Store user message
     user_message = ChatMessage(
-        chat_id=new_chat.id,
+        chat_id=chat_entry.id,
         role="user",
         content=chat.message,
     )
@@ -181,7 +189,7 @@ def store_chat(
     # Store chatbot response
     if chat.response:
         chatbot_message = ChatMessage(
-            chat_id=new_chat.id,
+            chat_id=chat_entry.id,
             role="chatbot",
             content=chat.response,
         )
@@ -190,7 +198,7 @@ def store_chat(
 
     try:
         db.commit()
-        db.refresh(new_chat)
+        db.refresh(chat_entry)
 
     except Exception:
         db.rollback()
@@ -199,23 +207,76 @@ def store_chat(
             detail="Database error",
         )
 
-    return new_chat
+    return chat_entry
 
 
-@router.get("/users/{user_id}/chats", response_model=list[ChatResponse])
-def get_chat_history(
-    user_id: int, admin=Depends(require_admin), db: Session = Depends(get_db)
+@router.get("/chats")
+def get_all_chat_history(
+    admin=Depends(require_admin),
+    db: Session = Depends(get_db),
 ):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    return (
+    chats = (
         db.query(ChatHistory)
-        .filter(ChatHistory.user_id == user_id)
+        .join(User, ChatHistory.user_id == User.id)
         .order_by(ChatHistory.timestamp.desc())
         .all()
     )
+
+    result = []
+
+    for chat in chats:
+        message_count = (
+            db.query(ChatMessage)
+            .filter(ChatMessage.chat_id == chat.id)
+            .count()
+        )
+
+        result.append(
+            {
+                "id": chat.id,
+                "user_id": chat.user_id,
+                "user": chat.user.username,
+                "date": chat.timestamp,
+                "session_id": chat.session_id,
+                "messages": message_count,
+                "status": "Completed",
+            }
+        )
+
+    return result
+
+
+@router.get("/users/{user_id}/chats/{chat_id}/messages")
+def get_chat_messages(
+    user_id: int,
+    chat_id: int,
+    admin=Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    chat = (
+        db.query(ChatHistory)
+        .filter(
+            ChatHistory.id == chat_id,
+            ChatHistory.user_id == user_id,
+        )
+        .first()
+    )
+
+    if not chat:
+        raise HTTPException(
+            status_code=404,
+            detail="Chat not found",
+        )
+
+    messages = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.chat_id == chat.id)
+        .order_by(ChatMessage.id.asc())
+        .all()
+    )
+
+    return messages
+
 
 
 @router.delete("/chat/history/{session_id}")

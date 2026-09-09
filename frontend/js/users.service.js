@@ -21,9 +21,13 @@ export async function fetchUsers(forceRefresh = false) {
   try {
     const users = await api.get("/admin/users");
 
-    usersCache = users;
+    const sortedUsers = users.sort((a, b) => a.id - b.id);
 
-    EventBus.emit("users:loaded", { users });
+    usersCache = sortedUsers;
+
+    EventBus.emit("users:loaded", {
+      users: sortedUsers,
+    });
   } catch (error) {
     EventBus.emit("users:error", {
       message: error.message,

@@ -4,8 +4,6 @@ from pydantic import BaseModel, ConfigDict
 
 
 class ChatCreate(BaseModel):
-    session_id: str
-    sender: str
     message: str
     response: str | None = None
 

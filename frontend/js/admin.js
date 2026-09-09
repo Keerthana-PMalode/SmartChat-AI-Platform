@@ -4,6 +4,8 @@ import { setCurrentSection, canNavigateTo } from "./admin_state.js";
 
 import { fetchUsers, handleCreateUser, deleteUser } from "./users.service.js";
 
+import { fetchChatHistory } from "./chat_history.service.js";
+
 import "./admin_ui.js";
 
 /* =========================
@@ -58,6 +60,10 @@ function handleNavigationRequest(section) {
   if (section === "users") {
     fetchUsers();
   }
+
+  if (section === "chat-history") {
+    fetchChatHistory();
+  }
 }
 
 /* =========================
@@ -73,9 +79,7 @@ function initController() {
 
   EventBus.on("app:logout", () => {
     localStorage.removeItem("authToken");
-
     localStorage.removeItem("username");
-
     localStorage.removeItem("role");
 
     window.location.href = "login.html";
@@ -84,6 +88,13 @@ function initController() {
   console.log("Admin application ready");
 
   EventBus.emit("app:ready");
+
+  // Restore data after browser refresh
+  const initialSection = window.location.hash.substring(1) || "dashboard";
+
+  if (initialSection === "users") {
+    fetchUsers();
+  }
 }
 
 initController();
@@ -94,4 +105,8 @@ EventBus.on("users:create-requested", (e) => {
 
 EventBus.on("users:delete-requested", async (e) => {
   await deleteUser(e.detail.userId);
+});
+
+EventBus.on("users:refresh-requested", async () => {
+  await fetchUsers(true);
 });

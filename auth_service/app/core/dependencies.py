@@ -57,7 +57,6 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     user_id = payload.get("user_id")
-    print("User_ID:", user_id)
 
     if user_id is None:
         raise HTTPException(status_code=401, detail="User ID missing from token")
@@ -68,6 +67,30 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="User not found")
 
     return user
+
+
+def get_current_session(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    token = credentials.credentials
+
+    payload = verify_token(token)
+
+    if payload is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token",
+        )
+
+    session_id = payload.get("session_id")
+
+    if not session_id:
+        raise HTTPException(
+            status_code=401,
+            detail="Session ID missing from token",
+        )
+
+    return session_id
 
 
 # -----------------------------
