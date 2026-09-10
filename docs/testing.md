@@ -30,6 +30,16 @@
 
 ## 15. Security Testing
 
+## 16. Session-Aware Chat Testing
+
+## 17. Administrative Chat History Testing
+
+## 18. Administrative Users UI Testing
+
+## 19. Admin Frontend Navigation and Session Cleanup Testing
+
+## 20. Updated Verification Summary
+
 ---
 
 ## 4. Chat History Isolation Testing
@@ -262,27 +272,102 @@ The response confirms that:
 
 ### 4.1 Authenticated Chat History Request
 
-An authenticated user requests their registered chat session using a valid JWT.
+The server extracts both the user_id and session_id from the authenticated
+JWT. The client does not provide the session ID as part of the request URL.
 
 **Request**
 
 ```http
-GET /chat/history/registered-test-session-20260830-001
+GET /chat/history
 Authorization: Bearer <JWT>
+```
+The chat-history isolation model is:
+
+```text
+GET /chat/history
+        │
+        ▼
+JWT
+ ├── user_id
+ └── session_id
+        │
+        ▼
+ChatHistory
+ WHERE user_id = JWT.user_id
+ AND session_id = JWT.session_id
 ```
 
 **Result**
 
 - Status: 200 OK
-- User_id: 25
-- Chat history returned
+- User ID: 1
+- Session ID: 618dd92e-84cd-47fd-8869-63d18ada80f3
+- Chat history returned successfully
+- Chat ID: 24
+- Messages returned: 2
+
+** Response **
+
+```json
+[
+  {
+    "id": 24,
+    "session_id": "618dd92e-84cd-47fd-8869-63d18ada80f3",
+    "user_id": 1,
+    "timestamp": "2026-09-10T15:22:11.121607Z",
+    "messages": [
+      {
+        "id": 65,
+        "chat_id": 24,
+        "role": "user",
+        "content": "Hiiiiiiiiiiiiiiiiiiiiiiii",
+        "created_at": "2026-09-10T15:22:11.121607Z"
+      },
+      {
+        "id": 66,
+        "chat_id": 24,
+        "role": "chatbot",
+        "content": "Helloooooooooooooooooooooooooooooooooooo",
+        "created_at": "2026-09-10T15:22:11.121607Z"
+      }
+    ]
+  }
+]
+```
 
 **Verification**
 
-The request was successfully authenticated using the JWT, and the chat
-history associated with the authenticated user's chat session was returned.
+The request was successfully authenticated using the JWT. The server extracted
+the authenticated user's user_id and session_id and returned the
+ChatHistory record matching both values.
 
-This confirms that authenticated users can retrieve their own chat history.
+The returned conversation contains:
+
+```text
+chat_history.id = 24
+chat_history.user_id = 1
+chat_history.session_id = 618dd92e-84cd-47fd-8869-63d18ada80f3
+```
+
+The conversation contains two associated messages:
+
+```text
+Message 65
+    chat_id = 24
+    role    = user
+    content = Hiiiiiiiiiiiiiiiiiiiiiii
+
+Message 66
+    chat_id = 24
+    role    = chatbot
+    content = Helloooooooooooooooooooooooooooooooooooo
+```
+
+This confirms that authenticated users can retrieve the chat history associated
+with their own authenticated user ID and session ID.
+
+It also confirms that the current API uses the JWT-derived session rather than
+accepting a client-supplied session_id in the request URL.
 
 ---
 
@@ -1222,3 +1307,403 @@ The Phase 2 audit implementation has been verified for:
 - Maximum-download rejection creates no audit record → **PASS**
 - Database access-context constraint → **PASS**
 - Share-link download count increments only on successful access → **PASS**
+
+---
+
+## 16. Session-Aware Chat Testing
+
+### 16.1 Verify New Session ID on Login
+
+Login with valid credentials through `POST /login`.
+
+Expected response:
+
+```json
+{
+  "access_token": "<JWT>",
+  "session_id": "<UUID>"
+}
+```
+
+Verify that the returned `session_id` is non-empty and that the same session identifier is represented in the JWT `session_id` claim.
+
+### 16.2 Verify Session ID Is Not Client-Supplied
+
+Send `POST /chat/history` with only:
+
+```json
+{
+  "message": "session test",
+  "response": "ok"
+}
+```
+
+The request should succeed with a valid JWT. The persisted `chat_history.session_id` must equal the session ID extracted from that JWT.
+
+A client-provided `session_id` or `sender` is no longer part of the `ChatCreate` request contract.
+
+### 16.3 Verify Conversation Reuse
+
+Using one login/session, submit two or more chat turns. Query:
+
+```bash
+docker compose exec -T postgres psql \
+  -U chatbot \
+  -d chatbot \
+  -c "SELECT id, session_id, user_id, timestamp
+      FROM chat_history
+      WHERE user_id = <USER_ID>
+      ORDER BY id DESC;"
+```
+
+Expected: one `chat_history` row for that user/session, with multiple related `chat_messages` rows.
+
+### 16.4 Verify New Login Creates a New Session
+
+Log out and authenticate again. Confirm that the new login receives a different `session_id`. Messages saved after the new login should be associated with the new session rather than the previous conversation.
+
+### 16.5 Verify Cross-User Isolation
+
+Attempt to request another user's session history while authenticated as a different user.
+
+Expected:
+
+- no cross-user chat records are returned;
+- the database query remains scoped by both session ID and authenticated user ID.
+
+---
+
+## 17. Administrative Chat History Testing
+
+### 17.1 Admin Chat Summary
+
+Authenticate as an administrator and request:
+
+```http
+GET /admin/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Expected response items contain:
+
+```text
+id
+user_id
+user
+date
+session_id
+messages
+status
+```
+
+Verify that the list is ordered by conversation timestamp descending and that `messages` matches the number of `chat_messages` rows belonging to each chat.
+
+### 17.2 Admin Chat Message Retrieval
+
+Select a valid chat and request:
+
+```http
+GET /admin/users/<USER_ID>/chats/<CHAT_ID>/messages
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Expected:
+
+- HTTP 200 OK;
+- messages belong to the requested chat;
+- messages are ordered by message ID ascending;
+- each message exposes `id`, `chat_id`, `role`, `content`, and `created_at`.
+
+### 17.3 Admin Chat Ownership Check
+
+Use a valid `CHAT_ID` with a different `USER_ID`.
+
+Expected:
+
+```text
+404 Not Found
+Chat not found
+```
+
+This verifies that the message endpoint does not return a chat merely because the chat ID exists. The chat must also belong to the requested user.
+
+### 17.4 Get User Chats
+
+The get_user_chats() operation retrieves the chat-history records belonging to a specific user.
+
+The API endpoint is:
+
+```http
+GET /admin/users/{user_id}/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+When accessed through the Nginx /auth/ prefix:
+
+```http
+GET /auth/admin/users/{user_id}/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+#### *Purpose*
+
+This endpoint is different from:
+
+```http
+GET /admin/chats
+```
+
+`GET /admin/chats` retrieves the administrative chat-history summary/list, whereas:
+
+```http
+GET /admin/users/{user_id}/chats
+```
+
+specifically retrieves the chats associated with the supplied `user_id`.
+
+#### *Administrator Test*
+
+Authenticate as an administrator and identify an existing user:
+
+```http
+GET /admin/users
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Select a valid user ID, for example:
+
+USER_ID = <USER_ID>
+
+Then request:
+
+```http
+GET /admin/users/<USER_ID>/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+#### *Expected Result*
+
+The request should return:
+
+```text
+200 OK
+```
+
+The returned chat-history records must belong to the requested user.
+
+For each returned chat, verify that:
+
+```text
+chat_history.user_id == <USER_ID>
+```
+
+The response must not contain chat histories belonging to another user.
+
+#### *User With No Chats*
+
+Repeat the test using a valid user who has no chat-history records.
+
+Expected behavior:
+
+```text
+200 OK
+[]
+```
+
+or the application's documented empty collection representation.
+
+The endpoint should not return another user's chat history simply because the requested user has no chats.
+
+#### *User Isolation Verification*
+
+Create or identify two users:
+
+```text
+User A
+User B
+```
+
+Create chat history for both users.
+
+Then call:
+
+```http
+GET /admin/users/<USER_A_ID>/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that only User A's chat histories are returned.
+
+Repeat:
+
+```http
+GET /admin/users/<USER_B_ID>/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that only User B's chat histories are returned.
+
+#### *Invalid User ID*
+
+Call the endpoint with a user ID that does not exist:
+
+```http
+GET /admin/users/<NON_EXISTENT_USER_ID>/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that the API returns the application's documented not-found response, normally:
+
+```text
+404 Not Found
+```
+
+#### *Non-Admin Authorization*
+
+Repeat the request using a valid ordinary-user JWT:
+
+```http
+GET /admin/users/<USER_ID>/chats
+Authorization: Bearer <ORDINARY_USER_JWT>
+```
+
+Expected:
+
+```text
+403 Forbidden
+```
+
+This confirms that `get_user_chats()` is protected by the administrator authorization requirement and cannot be invoked by an ordinary authenticated user.
+
+#### *Relationship Verification*
+
+The endpoint should follow the database relationship:
+
+```text
+users.id
+   │
+   ▼
+chat_history.user_id
+   │
+   ▼
+chat_history
+```
+
+The test therefore verifies both:
+
+The requested user_id is used to filter chat histories.
+The endpoint does not accidentally return all chat histories.
+This test should be kept separate from the `/admin/chats` test so that user-specific filtering is explicitly covered.
+
+### 17.5 Non-Admin Access
+
+Call `/admin/chats` and `/admin/users/{user_id}/chats/{chat_id}/messages` using a valid ordinary-user JWT.
+
+For example:
+
+```http
+GET /admin/chats
+Authorization: Bearer <ORDINARY_USER_JWT>
+```
+
+and:
+
+```http
+GET /admin/users/{user_id}/chats/{chat_id}/messages
+Authorization: Bearer <ORDINARY_USER_JWT>
+```
+
+Both requests should be rejected with:
+
+```text
+403 Forbidden
+```
+
+This confirms that administrative chat-history endpoints cannot be accessed by ordinary authenticated users because the endpoints require `require_admin`.
+
+### 17.6 Admin UI Chat View
+
+In the Admin UI:
+
+1. Navigate to **Chat History**.
+2. Confirm the summary table loads.
+3. Select **View** for a conversation.
+4. Confirm the Chat Details modal opens.
+5. Verify Chat ID, Session ID, and Date.
+6. Verify user and chatbot messages are displayed in order.
+7. Close the modal using the close control and by clicking the modal backdrop.
+
+### 17.7 Chat History Cache and Refresh
+
+Navigate to Chat History twice without forcing refresh. The second load should use the in-memory cache when available.
+
+After creating or changing relevant data, trigger the Admin refresh flow and verify that a new request is made and the displayed list is updated.
+
+---
+
+## 18. Administrative Users UI Testing
+
+### 18.1 User Sorting
+
+Load the Users section and verify that users are displayed in ascending numeric ID order.
+
+### 18.2 User Search
+
+Search using values from the user ID, username, email, and role fields. Verify that matching users remain visible and that the page resets to page 1 after search changes.
+
+### 18.3 User Pagination
+
+With more than ten users, verify:
+
+- ten users are displayed per page;
+- previous/next controls are disabled at the corresponding boundaries;
+- the active page is highlighted;
+- the footer reports the displayed range and total count.
+
+### 18.4 User Refresh
+
+Use the Refresh button in the Users section. Verify that the cache is bypassed and fresh data is rendered.
+
+### 18.5 Safe HTML Rendering
+
+Use test values containing HTML metacharacters in user/chat/log fields and verify that they are rendered as text rather than interpreted as HTML. This validates the frontend `escapeHtml()` utility used by the updated renderers.
+
+---
+
+## 19. Admin Frontend Navigation and Session Cleanup Testing
+
+### 19.1 Hash Navigation
+
+Open an Admin URL containing a section hash such as `#users` or `#chat-history`. Verify that the corresponding panel is selected during initialization.
+
+Change sections and verify that the URL hash, active navigation item, and visible content panel remain synchronized.
+
+### 19.2 Logout Cleanup
+
+Initiate logout and cancel the confirmation. Verify that the user remains in the Admin UI. Confirm logout and verify that:
+
+- `authToken` is removed;
+- `username` is removed;
+- `role` is removed;
+- the browser is redirected to `/login.html`.
+
+---
+
+## 20. Updated Verification Summary
+
+The recent Git changes introduce the following verification targets in addition to the existing authentication, chat-isolation, file, sharing, audit, encryption, routing, database, and Docker tests:
+
+| Area | Verification target |
+|------|---------------------|
+| Login | New UUID session returned and embedded in JWT |
+| Chat persistence | Session derived from JWT |
+| Chat persistence | Existing conversation reused for same user/session |
+| Admin chat list | Conversation summaries and message counts |
+| Admin chat view | User/chat ownership check and ordered messages |
+| Admin authorization | Ordinary users rejected from admin chat APIs |
+| Admin UI | Chat-history modal and message rendering |
+| Admin UI | Chat-history caching and refresh |
+| Users UI | Sorting, search, pagination, refresh |
+| Frontend security | HTML escaping for rendered data |
+| Navigation | Hash-based section restoration and navigation |
+| Logout | Authentication/session-related localStorage cleanup |

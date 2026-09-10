@@ -60,15 +60,14 @@ def save_chat(
     return chat_entry
 
 
-
 @router.get(
-    "/chat/history/{session_id}",
+    "/chat/history",
     response_model=list[ChatResponse],
 )
 def get_chat_history(
-    session_id: str,
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
+    session_id=Depends(get_current_session),
 ):
     chats = (
         db.query(ChatHistory)

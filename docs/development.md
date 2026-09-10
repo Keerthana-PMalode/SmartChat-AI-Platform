@@ -753,7 +753,7 @@ PostgreSQL cannot know that 30 or 31 corresponded to a particular .enc file unle
 
 So current implementation has successfully demonstrated database-level cascading deletion, but it has not yet demonstrated complete user-data deletion from all storage.
 
-## Current Data-Deletion Policy
+### Current Data-Deletion Policy
 
 The current development implementation intentionally uses hard deletion.
 Hard deletion is not inherently unproduction-ready. It is a valid production policy if the product intentionally wants account deletion to erase the user's application data.
@@ -774,3 +774,669 @@ It does not currently implement:
 
 These concerns should be addressed before defining a production data-retention
 and account-deletion policy.
+
+---
+
+## Administrative Chat History Development
+
+The Admin application now loads chat-history summaries when the `chat-history` section is selected. The controller delegates retrieval to `chat_history.service.js`, which caches the result and emits `chat-history:loading`, `chat-history:loaded`, and `chat-history:error` events.
+
+### Admin Chat History API
+
+#### Get All Chat History
+
+The Admin application retrieves the chat-history summaries using:
+
+```http
+GET /admin/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+When accessed through the Nginx `/auth/` prefix:
+
+```http
+GET /auth/admin/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+#### Get User Chats
+
+The Admin application can retrieve the chat histories belonging to a
+specific user using:
+
+```http
+GET /admin/users/{user_id}/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+When accessed through the Nginx `/auth/` prefix:
+
+```http
+GET /auth/admin/users/{user_id}/chats
+Authorization: Bearer <ADMIN_JWT>
+```
+
+The `{user_id}` identifies the user whose chat histories are being requested.
+
+The endpoint is administrator-only and should return only the chat histories
+associated with the requested user.
+
+#### Get Chat Messages
+
+When an administrator selects a chat-history row, the application retrieves
+the messages belonging to that conversation using:
+
+```http
+GET /admin/users/{user_id}/chats/{chat_id}/messages
+Authorization: Bearer <ADMIN_JWT>
+```
+
+When accessed through the Nginx `/auth/` prefix:
+
+```http
+GET /auth/admin/users/{user_id}/chats/{chat_id}/messages
+Authorization: Bearer <ADMIN_JWT>
+```
+
+The UI verifies the presence of both `user_id` and `chat_id` before requesting
+the messages.
+
+The returned messages are rendered in the Chat Details modal and are
+displayed in descending message-ID order.
+
+### Admin Chat History Deletion
+
+#### Delete Chat History
+
+The Admin API provides an endpoint for deleting an entire chat-history
+session:
+
+```http
+DELETE /admin/chat/history/{session_id}
+Authorization: Bearer <ADMIN_JWT>
+```
+
+When accessed through the Nginx `/auth/` prefix:
+
+```http
+DELETE /auth/admin/chat/history/{session_id}
+Authorization: Bearer <ADMIN_JWT>
+```
+
+The endpoint requires an authenticated administrator. The request must contain
+a valid JWT with administrator privileges.
+
+The `{session_id}` identifies the chat session to be deleted.
+
+#### Deletion Behavior
+
+The operation deletes the corresponding `chat_history` record.
+
+Because
+`chat_messages.chat_id` references `chat_history.id` with:
+
+```text
+ON DELETE CASCADE
+```
+
+deleting the chat-history record also deletes all messages associated with
+that conversation.
+
+The deletion relationship is:
+
+```text
+DELETE /admin/chat/history/{session_id}
+              │
+              ▼
+        chat_history
+              │
+              │ ON DELETE CASCADE
+              ▼
+        chat_messages
+```
+
+Therefore, deleting a chat-history session removes both the
+`chat_history` record and its associated `chat_messages` records.
+
+#### Authorization
+
+The endpoint is an administrative operation and must not be accessible to an
+ordinary authenticated user.
+
+An administrator request should succeed when the supplied session ID
+identifies an existing chat history.
+
+An ordinary-user JWT should receive:
+
+```text
+403 Forbidden
+```
+
+because the endpoint requires administrative privileges.
+
+#### Session Lookup
+
+The endpoint identifies the chat history using the supplied `session_id`.
+
+The implementation should ensure that the intended chat-history record is
+selected before deletion and that the operation does not unintentionally
+delete another user's conversation when a session ID is supplied.
+
+#### Expected Result
+
+For a successful deletion, the API returns a successful HTTP response
+indicating that the chat history was deleted.
+
+After deletion, the corresponding `chat_history` record should no longer
+exist, and its associated `chat_messages` records should also be absent
+because of the database cascade.
+
+#### Database Verification
+
+Before deletion:
+
+```bash
+SELECT id, session_id, user_id
+FROM chat_history
+WHERE session_id = '<SESSION_ID>';
+```
+
+Check the associated messages:
+
+```bash
+SELECT m.id, m.chat_id, m.role, m.content
+FROM chat_messages m
+JOIN chat_history h
+  ON h.id = m.chat_id
+WHERE h.session_id = '<SESSION_ID>';
+```
+
+After calling:
+
+```http
+DELETE /admin/chat/history/{session_id}
+```
+
+repeat both queries.
+
+Expected result:
+
+```text
+chat_history: 0 rows
+
+chat_messages: 0 rows
+```
+
+This verifies both application-level deletion and the database-level
+`ON DELETE CASCADE` behavior.
+
+### Chat History Cache
+
+`fetchChatHistory()` uses an in-memory module cache. Calling
+`fetchChatHistory(false)` reuses the cached list when available;
+`fetchChatHistory(true)` performs a new API request.
+
+```text
+Admin navigates to Chat History
+        │
+        ▼
+chat_history.service.js
+        │
+        ├── cache hit ──► chat-history:loaded
+        │
+        └── cache miss ─► GET /admin/chats
+                              │
+                              ▼
+                         update cache
+                              │
+                              ▼
+                       chat-history:loaded
+```
+
+### Admin User List Development
+
+The Users UI maintains separate `allUsers` and `filteredUsers` collections
+and a `currentUsersPage` value.
+
+Users are sorted by numeric ID after retrieval. Search matches ID, username,
+email, or role, and the UI supports pagination through the retrieved user
+list.
+
+The Refresh action emits `users:refresh-requested`, causing the service to
+bypass its cache.
+
+The exact number of users displayed per page has not yet been explicitly
+verified and should not be treated as a confirmed behavior until tested.
+
+The user renderer escapes displayed values before inserting them into HTML.
+The same `escapeHtml()` utility is used for `chat-history` and `audit-log`
+rendering.
+
+#### Admin Users API Response Behavior
+
+The Admin Users endpoint is currently:
+
+```http
+GET /admin/users
+Authorization: Bearer <ADMIN_JWT>
+```
+
+When exposed through the Nginx `/auth/` prefix, the externally accessible URL
+is:
+
+```http
+GET /auth/admin/users
+Authorization: Bearer <ADMIN_JWT>
+```
+
+The endpoint currently exposes the serialized ORM user model in its response
+rather than returning a separately defined, explicitly restricted
+user-response schema.
+
+This means changes to the underlying ORM model or its serialization behavior
+may affect the API response.
+
+##### Development Consideration
+
+The current implementation should be treated as an implementation detail
+that requires review before production hardening.
+
+The response should eventually use an explicit response schema containing only
+fields that are intentionally exposed to administrators.
+
+In particular, authentication-related, internal, or sensitive ORM fields
+should not be exposed merely because they exist on the SQLAlchemy model.
+
+Until this is addressed, changes to the User ORM model should be reviewed for
+their potential effect on:
+
+```http
+GET /admin/users
+```
+
+and its externally exposed route:
+
+```http
+GET /auth/admin/users
+```
+
+#### Admin Users Pagination
+
+The Users UI implements pagination, but the exact number of users displayed
+per page has not yet been explicitly verified.
+
+The current documentation therefore does not define a fixed page size.
+
+The pagination behavior should be explicitly tested before documenting the
+number of users displayed on each page.
+
+### Admin Navigation and Session Cleanup
+
+The Admin controller restores the initial section from `window.location.hash`
+after initialization.
+
+The UI uses hash changes to emit navigation events and uses EventBus to update
+the active section and visible panel.
+
+Logout continues to require confirmation before redirecting to
+`/login.html`. The controller clears `authToken`, `username`, and `role` from
+localStorage before redirecting.
+
+---
+
+## Session-Aware Chat Development
+
+Successful login now creates a new UUID session ID for every login. The value is inserted into the JWT as `session_id` and is also returned to the frontend:
+
+```json
+{
+  "access_token": "<JWT>",
+  "session_id": "<UUID>"
+}
+```
+
+The chat save endpoint no longer takes `session_id` or `sender` from the request schema. `get_current_session()` validates the bearer token and extracts `session_id` from the JWT. 
+
+### Chat History API Endpoints
+
+The authenticated chat-history API is exposed through the Auth Service:
+
+```http
+POST /chat/history
+GET  /chat/history
+```
+
+Both endpoints require a valid JWT:
+
+```http
+Authorization: Bearer <JWT>
+```
+
+The client does not provide session_id in the request URL. The server
+extracts the session ID from the authenticated JWT.
+
+### Store Chat
+
+```http
+POST /chat/history
+Authorization: Bearer <JWT>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "message": "Hiiiiiiiiiiiiiiiiiiiiiiii",
+  "response": "Helloooooooooooooooooooooooooooooooooooo"
+}
+```
+
+The server extracts:
+
+```text
+user_id    ← authenticated JWT
+session_id ← authenticated JWT
+```
+
+Chat persistence then searches by:
+
+```text
+ChatHistory.session_id == authenticated session_id
+AND
+ChatHistory.user_id == authenticated user.id
+```
+
+A conversation record is created only when that combination does not already
+exist. Each request adds a user message and, when supplied, a chatbot message
+to the existing conversation.
+
+### Chat Session Uniqueness Constraint
+
+The session-aware chat design requires a single chat_history record for each
+authenticated user/session combination.
+
+The intended uniqueness rule is:
+
+```text
+(user_id, session_id)
+```
+
+A user may have multiple chat sessions, and different users may have different
+chat sessions, but the same combination of:
+
+```text
+user_id + session_id
+```
+
+must identify only one chat_history record.
+
+Conceptually:
+
+```text
+UNIQUE (user_id, session_id)
+```
+
+This constraint should be enforced at the database level rather than relying
+only on application-level lookup logic.
+
+The application currently searches for an existing conversation using:
+
+```text
+ChatHistory.user_id == authenticated user.id
+AND
+ChatHistory.session_id == authenticated session_id
+```
+
+The database uniqueness constraint should provide an additional guarantee
+against duplicate chat-history records being created for the same
+user/session combination, including during concurrent requests.
+
+#### Current Status
+
+The (user_id, session_id) database uniqueness constraint has been identified
+as required for the session-aware chat-history design.
+
+It remains to be implemented/verified in the database schema.
+
+Until the constraint is implemented, application-level lookup prevents normal
+duplicate creation, but database-level uniqueness is not yet enforcing the
+invariant.
+
+### Get Chat History
+
+```http
+GET /chat/history
+Authorization: Bearer <JWT>
+```
+
+The server again extracts user_id and session_id from the JWT and returns
+the chat history matching both values.
+
+The isolation model is:
+
+```text
+GET /chat/history
+        │
+        ▼
+JWT
+ ├── user_id
+ └── session_id
+        │
+        ▼
+ChatHistory
+ WHERE user_id = JWT.user_id
+ AND session_id = JWT.session_id
+        │
+        ▼
+ChatMessage
+ WHERE chat_id = ChatHistory.id
+```
+
+A successful response contains the conversation metadata and its associated
+messages:
+
+```json
+[
+  {
+    "id": 24,
+    "session_id": "618dd92e-84cd-47fd-8869-63d18ada80f3",
+    "user_id": 1,
+    "timestamp": "2026-09-10T15:22:11.121607Z",
+    "messages": [
+      {
+        "id": 65,
+        "chat_id": 24,
+        "role": "user",
+        "content": "Hiiiiiiiiiiiiiiiiiiiiiiii",
+        "created_at": "2026-09-10T15:22:11.121607Z"
+      },
+      {
+        "id": 66,
+        "chat_id": 24,
+        "role": "chatbot",
+        "content": "Helloooooooooooooooooooooooooooooooooooo",
+        "created_at": "2026-09-10T15:22:11.121607Z"
+      }
+    ]
+  }
+]
+```
+
+### Session-Based Conversation Reuse
+
+This means repeated messages in one login session are grouped under one
+chat_history record instead of creating a new conversation record for every
+message.
+
+The relationship is:
+
+```text
+One login session
+      │
+      ▼
+session_id
+      │
+      ▼
+chat_history
+      │
+      ├──► chat_messages (user)
+      │
+      ├──► chat_messages (chatbot)
+      │
+      └──► additional messages
+```
+
+A fresh login receives a new session ID, so messages saved after the new login
+are associated with the new session rather than the previous conversation.
+
+### Development Verification
+
+After login, inspect the response and confirm that a UUID-like session_id is
+returned. Decode the JWT during development and confirm the same value is
+present in the session_id claim.
+
+Then:
+
+1. Send multiple POST /chat/history requests during the same login
+session.
+2. Verify that all messages reference the same chat_history.id.
+3. Send GET /chat/history using the same JWT.
+4. Verify that the conversation and all associated messages are returned.
+5. Log out and authenticate again.
+6. Confirm that the new login receives a different session_id.
+7. Save another message and verify that it is associated with the new session.
+
+---
+
+## Pending Development and Hardening Items
+
+The following items have been identified during development and testing and
+are intentionally recorded here until they are implemented and verified.
+
+### 1. Admin Users ORM Response Schema
+
+Current behavior:
+
+```http
+GET /admin/users
+```
+
+currently exposes the serialized ORM user model.
+
+Required follow-up:
+
+Introduce an explicit response schema so that the API exposes only fields
+intentionally approved for administrative use.
+
+`Status`: Pending.
+
+### 2. Chat Session Uniqueness Constraint
+
+The session-aware chat model requires:
+
+```text
+UNIQUE (user_id, session_id)
+```
+
+on chat_history.
+
+Required follow-up:
+
+Add and verify a database-level uniqueness constraint for the combination of:
+
+```text
+user_id
+session_id
+```
+
+This should prevent duplicate chat-history records for the same user/session,
+including under concurrent requests.
+
+`Status`: Pending.
+
+### 3. get_user_chats() Test Coverage
+
+The following endpoint requires an explicit test:
+
+```http
+GET /admin/users/{user_id}/chats
+```
+
+The test must verify:
+
+- Administrator access succeeds.
+- Only the requested user's chats are returned.
+- A user with no chats returns an empty collection.
+- A nonexistent user produces the documented not-found response.
+- An `ordinary-user JWT` receives `403 Forbidden`.
+- Chat histories belonging to other users are not returned.
+
+`Status`: Pending verification.
+
+### 4. delete_chat_history() Test Coverage
+
+The administrative chat-history deletion endpoint is:
+
+```http
+DELETE /admin/chat/history/{session_id}
+```
+
+The test should verify:
+
+- Administrator authorization.
+- Successful deletion of the requested chat history.
+- Associated chat_messages are deleted through `ON DELETE CASCADE`.
+- The deleted session is no longer returned by `chat-history` queries.
+- An `ordinary-user JWT` receives `403 Forbidden`.
+- Behavior for a nonexistent session is documented and verified.
+
+`Status`: Pending verification.
+
+### 5. Physical Encrypted-File Cleanup
+
+Database-level user deletion and cascading deletion have been demonstrated,
+but PostgreSQL does not automatically remove encrypted files stored under:
+
+```text
+file_service/uploads/*.enc
+```
+
+Required follow-up:
+
+Implement and verify application-level cleanup of physical encrypted storage
+when the corresponding database records are deleted.
+
+`Status`: Pending.
+
+### 6. Admin Users Pagination Size
+
+The Admin Users UI implements pagination, but the exact number of users
+displayed per page has not yet been explicitly tested and documented.
+
+Required follow-up:
+
+Verify the actual pagination behavior by testing with enough users to span
+multiple pages and confirm:
+
+- Number of users displayed on each page.
+- Behavior when the total number of users is less than one page.
+- Behavior on the final partially filled page.
+- Page navigation behavior.
+- Interaction between search filtering and pagination.
+- Refresh behavior after pagination.
+
+Once verified, document the confirmed page size in the Admin User List
+Development section and the corresponding testing section.
+
+`Status`: Pending verification.
+
+
+**Tracking Rule** - 
+Items in this section should remain until the corresponding implementation
+and test verification have been completed.
+
+When an item is completed, update the relevant development/testing sections
+and remove or mark the item as completed here.
+
+---
