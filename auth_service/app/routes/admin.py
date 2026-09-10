@@ -142,10 +142,9 @@ def search_users(q: str, admin=Depends(require_admin), db: Session = Depends(get
     return results
 
 
-@router.post("/users/{user_id}/chats", response_model=ChatResponse)
-def store_chat(
+@router.get("/users/{user_id}/chats", response_model=list[ChatResponse])
+def get_user_chats(
     user_id: int,
-    chat: ChatCreate,
     admin=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -157,57 +156,14 @@ def store_chat(
             detail="User not found",
         )
 
-    # Find existing conversation for this user/session
-    chat_entry = (
+    chats = (
         db.query(ChatHistory)
-        .filter(
-            ChatHistory.session_id == chat.session_id,
-            ChatHistory.user_id == user.id,
-        )
-        .first()
+        .filter(ChatHistory.user_id == user.id)
+        .order_by(ChatHistory.timestamp.desc())
+        .all()
     )
 
-    # Create conversation only if this is the first message
-    if not chat_entry:
-        chat_entry = ChatHistory(
-            user_id=user.id,
-            session_id=chat.session_id,
-        )
-
-        db.add(chat_entry)
-        db.flush()
-
-    # Store user message
-    user_message = ChatMessage(
-        chat_id=chat_entry.id,
-        role="user",
-        content=chat.message,
-    )
-
-    db.add(user_message)
-
-    # Store chatbot response
-    if chat.response:
-        chatbot_message = ChatMessage(
-            chat_id=chat_entry.id,
-            role="chatbot",
-            content=chat.response,
-        )
-
-        db.add(chatbot_message)
-
-    try:
-        db.commit()
-        db.refresh(chat_entry)
-
-    except Exception:
-        db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail="Database error",
-        )
-
-    return chat_entry
+    return chats
 
 
 @router.get("/chats")

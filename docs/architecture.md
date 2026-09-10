@@ -158,7 +158,10 @@ The JWT contains authentication information such as:
 - User ID
 - Username
 - Role
+- Session ID
 - Expiration time
+
+A new UUID session ID is generated for every successful login and is included in both the JWT claims and the login response. Protected chat persistence derives the current session from the authenticated JWT rather than accepting a client-supplied session ID.
 
 The frontend stores the JWT using the authToken key in browser localStorage.
 
@@ -238,6 +241,8 @@ chat_messages
 **chat_history** represents the conversation/session.
 
 **chat_messages** stores the individual messages belonging to that session.
+
+A **chat_history** record is created only when the first message for a user/session is stored. Subsequent messages for the same authenticated user and session reuse the existing conversation record.
 
 A **chat_history** record contains:
 
@@ -786,7 +791,49 @@ File Service
 
 ---
 
-## 16. Architectural Principles
+## 16. Administrative Chat History Architecture
+
+The Admin UI now provides a dedicated chat-history workflow backed by authenticated admin APIs. The architecture separates chat-history discovery from message retrieval:
+
+```text
+Admin Browser
+    │
+    │ GET /admin/chats
+    ▼
+Admin API
+    │
+    ├──► chat_history + users
+    │       └── message count
+    │
+    └──► GET /admin/users/{user_id}/chats/{chat_id}/messages
+                │
+                ▼
+          ordered chat_messages
+```
+
+The administrative list returns conversation metadata including chat ID, user ID, username, date, session ID, message count, and a `Completed` status value. A selected conversation is then loaded by a second request and displayed in a modal with chat ID, session ID, date, role, content, and message timestamp.
+
+The frontend uses `chat_history.service.js` for cached chat-history retrieval and `chat.service.js` for message retrieval. Chat-history loading is coordinated through the existing EventBus. A forced refresh bypasses the chat-history cache.
+
+The Admin API endpoints require `require_admin`, so administrative chat data is not exposed to ordinary users. The message endpoint also verifies that the requested chat belongs to the supplied user ID before returning messages.
+
+## 17. Administrative Frontend Architecture
+
+The Admin UI now follows a controller/service/UI separation for user and chat-history features:
+
+- `admin.js` coordinates navigation and service actions.
+- `admin_ui.js` owns rendering, interaction handlers, modal behavior, and UI state.
+- `users.service.js` retrieves and caches users and emits EventBus events.
+- `chat_history.service.js` retrieves and caches administrative chat summaries.
+- `chat.service.js` retrieves messages for a selected chat.
+- `admin_api.js` centralizes authenticated HTTP requests, timeout handling, GET retries, and 401 redirection.
+- `admin_events.js` provides event-based coordination between controller, services, and UI.
+
+The Users section now supports client-side search, deterministic ID sorting, ten-users-per-page pagination, explicit refresh, and delete actions. The Admin chat-history section supports selecting a conversation and viewing its ordered messages in a modal.
+
+Navigation state is synchronized with the URL hash. On initialization the UI restores the section represented by the hash, and navigation changes are propagated through EventBus events.
+
+## 18. Architectural Principles
 
 SmartChat follows these architectural principles:
 
