@@ -842,7 +842,7 @@ The UI verifies the presence of both `user_id` and `chat_id` before requesting
 the messages.
 
 The returned messages are rendered in the Chat Details modal and are
-displayed in descending message-ID order.
+displayed in ascending message-ID order.
 
 ### Admin Chat History Deletion
 

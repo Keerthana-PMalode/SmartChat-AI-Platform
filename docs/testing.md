@@ -1445,7 +1445,7 @@ GET /auth/admin/users/{user_id}/chats
 Authorization: Bearer <ADMIN_JWT>
 ```
 
-#### *Purpose*
+#### Purpose
 
 This endpoint is different from:
 
@@ -1461,7 +1461,7 @@ GET /admin/users/{user_id}/chats
 
 specifically retrieves the chats associated with the supplied `user_id`.
 
-#### *Administrator Test*
+#### Administrator Test
 
 Authenticate as an administrator and identify an existing user:
 
@@ -1481,7 +1481,7 @@ GET /admin/users/<USER_ID>/chats
 Authorization: Bearer <ADMIN_JWT>
 ```
 
-#### *Expected Result*
+#### Expected Result
 
 The request should return:
 
@@ -1499,7 +1499,7 @@ chat_history.user_id == <USER_ID>
 
 The response must not contain chat histories belonging to another user.
 
-#### *User With No Chats*
+#### User With No Chats
 
 Repeat the test using a valid user who has no chat-history records.
 
@@ -1514,7 +1514,7 @@ or the application's documented empty collection representation.
 
 The endpoint should not return another user's chat history simply because the requested user has no chats.
 
-#### *User Isolation Verification*
+#### User Isolation Verification
 
 Create or identify two users:
 
@@ -1543,7 +1543,7 @@ Authorization: Bearer <ADMIN_JWT>
 
 Verify that only User B's chat histories are returned.
 
-#### *Invalid User ID*
+#### Invalid User ID
 
 Call the endpoint with a user ID that does not exist:
 
@@ -1558,7 +1558,7 @@ Verify that the API returns the application's documented not-found response, nor
 404 Not Found
 ```
 
-#### *Non-Admin Authorization*
+#### Non-Admin Authorization
 
 Repeat the request using a valid ordinary-user JWT:
 
@@ -1575,7 +1575,7 @@ Expected:
 
 This confirms that `get_user_chats()` is protected by the administrator authorization requirement and cannot be invoked by an ordinary authenticated user.
 
-#### *Relationship Verification*
+#### Relationship Verification
 
 The endpoint should follow the database relationship:
 
