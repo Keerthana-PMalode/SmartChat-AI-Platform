@@ -4,9 +4,9 @@ from app.models.chat import ChatHistory, ChatMessage
 from app.models.user import User
 from app.schemas.admin import CreateUserRequest, UpdateRoleRequest
 from app.schemas.chat import ChatCreate, ChatResponse
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_, String
 from datetime import date
 from sqlalchemy.exc import IntegrityError
 
@@ -168,38 +168,118 @@ def get_user_chats(
 
 @router.get("/chats")
 def get_all_chat_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    search: str | None = Query(None),
     admin=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    chats = (
+    # ---------------------------------------
+    # Base query
+    # ---------------------------------------
+
+    base_query = (
         db.query(ChatHistory)
-        .join(User, ChatHistory.user_id == User.id)
+        .join(
+            User,
+            ChatHistory.user_id == User.id,
+        )
+    )
+
+    # ---------------------------------------
+    # Search
+    # ---------------------------------------
+
+    if search and search.strip():
+        search_term = f"%{search.strip()}%"
+
+        base_query = base_query.filter(
+            or_(
+                ChatHistory.id.cast(String).ilike(search_term),
+                ChatHistory.user_id.cast(String).ilike(search_term),
+                User.username.ilike(search_term),
+                ChatHistory.session_id.ilike(search_term),
+            )
+        )
+
+    # ---------------------------------------
+    # Total matching conversations
+    # ---------------------------------------
+
+    total = base_query.count()
+
+    # ---------------------------------------
+    # Pagination
+    # ---------------------------------------
+
+    offset = (page - 1) * page_size
+
+    chats = (
+        base_query
         .order_by(ChatHistory.timestamp.desc())
+        .offset(offset)
+        .limit(page_size)
         .all()
     )
 
-    result = []
+    # ---------------------------------------
+    # Message counts for current page only
+    # ---------------------------------------
 
-    for chat in chats:
-        message_count = (
-            db.query(ChatMessage)
-            .filter(ChatMessage.chat_id == chat.id)
-            .count()
+    chat_ids = [chat.id for chat in chats]
+
+    message_counts = {}
+
+    if chat_ids:
+        counts = (
+            db.query(
+                ChatMessage.chat_id,
+                func.count(ChatMessage.id).label("message_count"),
+            )
+            .filter(
+                ChatMessage.chat_id.in_(chat_ids)
+            )
+            .group_by(ChatMessage.chat_id)
+            .all()
         )
 
-        result.append(
-            {
-                "id": chat.id,
-                "user_id": chat.user_id,
-                "user": chat.user.username,
-                "date": chat.timestamp,
-                "session_id": chat.session_id,
-                "messages": message_count,
-                "status": "Completed",
-            }
-        )
+        message_counts = {
+            chat_id: count
+            for chat_id, count in counts
+        }
 
-    return result
+    # ---------------------------------------
+    # Response
+    # ---------------------------------------
+
+    items = [
+        {
+            "id": chat.id,
+            "user_id": chat.user_id,
+            "user": chat.user.username,
+            "date": chat.timestamp,
+            "session_id": chat.session_id,
+            "messages": message_counts.get(
+                chat.id,
+                0,
+            ),
+            "status": "Completed",
+        }
+        for chat in chats
+    ]
+
+    total_pages = max(
+        1,
+        (total + page_size - 1) // page_size,
+    )
+
+    return {
+        "items": items,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+    }
 
 
 @router.get("/users/{user_id}/chats/{chat_id}/messages")

@@ -73,7 +73,6 @@
             <!-- Header -->
             <div class="section-header">
               <h2>Users</h2>
-
               <div class="section-actions">
                 <button
                   id="refresh-users-btn"
@@ -83,26 +82,37 @@
                   <i class="fas fa-sync-alt"></i>
                   Refresh
                 </button>
-
                 <button id="create-user-btn" class="primary-btn">
                   <i class="fas fa-user-plus"></i>
                   Create User
                 </button>
               </div>
             </div>
-
             <!-- Toolbar -->
             <div class="section-toolbar">
               <div class="search-box">
                 <input
-                  id="users-search-input"
                   type="text"
+                  id="user-search"
                   placeholder="Search users..."
                   autocomplete="off"
                 />
-
-                <button>
+                <button
+                  id="user-search-btn"
+                  type="button"
+                  title="Search"
+                  aria-label="Search users"
+                >
                   <i class="fas fa-search"></i>
+                </button>
+                <button
+                  id="user-clear-search-btn"
+                  class="hidden"
+                  type="button"
+                  title="Clear search"
+                  aria-label="Clear user search"
+                >
+                  <i class="fas fa-times"></i>
                 </button>
               </div>
             </div>
@@ -113,7 +123,6 @@
                   <tr>
                     <th>ID</th>
                     <th>Name</th>
-                    <th>Email</th>
                     <th>Role</th>
                     <th>Actions</th>
                   </tr>
@@ -124,26 +133,89 @@
             <!-- Footer -->
             <div class="section-footer">
               <span> Showing 1-10 of 250 users </span>
-              <div class="pagination">
-                <button>&lt;</button>
-                <button class="active">1</button>
-                <button>2</button>
-                <button>3</button>
-                <button>&gt;</button>
-              </div>
+              <div id="users-pagination" class="pagination"></div>
             </div>
           </div>
         </section>
+        <!-- Create User Modal -->
+        <div
+          id="create-user-modal"
+          class="modal hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-hidden="true"
+        >
+          <div class="modal-box">
+            <h2>Create User</h2>
+            <form id="create-user-form">
+              <div class="form-group">
+                <label for="create-user-username"> Username </label>
+                <input
+                  id="create-user-username"
+                  name="username"
+                  type="text"
+                  required
+                  autocomplete="username"
+                />
+              </div>
+              <div class="form-group">
+                <label for="create-user-password"> Password </label>
+                <input
+                  id="create-user-password"
+                  name="password"
+                  type="password"
+                  required
+                  autocomplete="new-password"
+                />
+              </div>
+              <div class="form-group">
+                <label for="create-user-role"> Role </label>
+                <select id="create-user-role" name="role">
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div class="modal-actions">
+                <button
+                  type="button"
+                  id="cancel-create-user-btn"
+                  class="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  id="submit-create-user-btn"
+                  class="btn"
+                  style="background: #2563eb"
+                  disabled
+                >
+                  Create User
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
         <!-- Chat History -->
         <section id="chat-history-panel" class="content-panel hidden">
           <div class="section-card">
             <!-- Header -->
             <div class="section-header">
               <h2>Chat History</h2>
-              <button class="primary-btn" id="export-chat-btn">
-                <i class="fas fa-file-export"></i>
-                Export
-              </button>
+              <div class="section-actions">
+                <button
+                  id="refresh-chat-btn"
+                  class="secondary-btn"
+                  type="button"
+                >
+                  <i class="fas fa-sync-alt"></i>
+                  Refresh
+                </button>
+                <button id="export-chat-btn" class="primary-btn">
+                  <i class="fas fa-file-export"></i>
+                  Export
+                </button>
+              </div>
             </div>
             <!-- Toolbar -->
             <div class="section-toolbar">
@@ -152,8 +224,24 @@
                   type="text"
                   id="chat-search"
                   placeholder="Search conversations..."
+                  autocomplete="off"
                 />
-                <button>
+                <button
+                  type="button"
+                  id="chat-clear-search-btn"
+                  class="search-clear-btn hidden"
+                  aria-label="Clear search"
+                  title="Clear search"
+                >
+                  <i class="fas fa-times"></i>
+                </button>
+                <button
+                  type="button"
+                  id="chat-search-btn"
+                  class="search-submit-btn"
+                  aria-label="Search"
+                  title="Search"
+                >
                   <i class="fas fa-search"></i>
                 </button>
               </div>
@@ -178,51 +266,92 @@
             </div>
             <!-- Footer -->
             <div class="section-footer">
-              <span id="chat-count"> Showing 1-20 conversations </span>
+              <span id="chat-count"> Loading conversations... </span>
+              <div id="chat-pagination" class="pagination"></div>
             </div>
           </div>
         </section>
         <!-- Chat View Modal -->
-        <div id="chat-view-modal" class="modal hidden">
-          <div class="modal-box chat-view-box">
+        <div id="chat-view-modal" class="modal hidden" aria-hidden="true">
+          <div
+            class="modal-box chat-view-box"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="chat-view-title"
+          >
+            <!-- Header -->
             <div class="chat-view-header">
-              <h2>Chat Details</h2>
-
+              <div class="chat-view-title-group">
+                <div class="chat-view-icon">
+                  <i class="fas fa-comments"></i>
+                </div>
+                <div>
+                  <h2 id="chat-view-title">Conversation</h2>
+                  <p class="chat-view-subtitle">Chat conversation details</p>
+                </div>
+              </div>
               <button
                 type="button"
-                id="close-chat-view"
+                id="chat-modal-close"
                 class="icon-btn"
-                title="Close"
+                title="Close conversation"
+                aria-label="Close conversation"
               >
                 <i class="fas fa-times"></i>
               </button>
             </div>
-
             <!-- Chat Information -->
             <div class="chat-details">
               <div class="chat-detail-item">
-                <span class="chat-detail-label">Chat ID:</span>
-                <span id="chat-detail-id">-</span>
+                <span class="chat-detail-label">
+                  <i class="fas fa-hashtag"></i>
+                  Chat
+                </span>
+                <span id="chat-detail-id" class="chat-detail-value"> - </span>
               </div>
-
               <div class="chat-detail-item">
-                <span class="chat-detail-label">Session ID:</span>
-                <span id="chat-detail-session">-</span>
+                <span class="chat-detail-label">
+                  <i class="fas fa-user"></i>
+                  User
+                </span>
+                <span id="chat-detail-user" class="chat-detail-value"> - </span>
               </div>
-
               <div class="chat-detail-item">
-                <span class="chat-detail-label">Date:</span>
-                <span id="chat-detail-date">-</span>
+                <span class="chat-detail-label">
+                  <i class="fas fa-calendar-alt"></i>
+                  Date
+                </span>
+                <span id="chat-detail-date" class="chat-detail-value"> - </span>
+              </div>
+              <div class="chat-detail-item session-detail">
+                <span class="chat-detail-label">
+                  <i class="fas fa-fingerprint"></i>
+                  Session
+                </span>
+                <span
+                  id="chat-detail-session"
+                  class="chat-detail-value session-id"
+                  title=""
+                >
+                  -
+                </span>
               </div>
             </div>
-
-            <!-- Messages -->
+            <!-- Conversation -->
+            <div class="chat-conversation-header">
+              <span>
+                <i class="fas fa-comment-dots"></i>
+                Conversation
+              </span>
+              <span id="chat-message-count" class="chat-message-count">
+                0 messages
+              </span>
+            </div>
             <div id="chat-view-messages" class="chat-view-messages">
               <!-- Messages will be inserted here -->
             </div>
           </div>
         </div>
-
         <!-- Analytics -->
         <section id="analytics-panel" class="content-panel hidden">
           <div class="card">Analytics</div>
@@ -284,23 +413,44 @@
         </section>
       </main>
     </div>
-    <!-- Confirmation Modal -->
+    <!-- Logout Confirmation Modal -->
     <div
       id="confirm-modal"
       class="modal hidden"
       role="dialog"
       aria-modal="true"
-      aria-hidden="true"
+      aria-labelledby="logout-modal-title"
+      aria-describedby="logout-desc"
     >
       <div class="modal-box">
-        <h2 data-modal-title></h2>
-        <p id="logout-desc" data-modal-message></p>
+        <h2 id="logout-modal-title">Confirm Logout</h2>
+        <p id="logout-desc">Do you want to Logout?</p>
         <div class="modal-actions">
-          <button class="btn btn-secondary" data-modal-cancel>Cancel</button>
-          <button class="btn btn-danger" data-modal-confirm>Confirm</button>
+          <button
+            type="button"
+            id="logout-cancel-btn"
+            class="btn btn-secondary"
+          >
+            Cancel
+          </button>
+          <button type="button" id="logout-confirm-btn" class="btn btn-danger">
+            Confirm
+          </button>
         </div>
       </div>
     </div>
+    <script>
+      window.addEventListener("error", (event) => {
+        console.error("GLOBAL JS ERROR:", event.error);
+        console.error("Message:", event.message);
+        console.error("File:", event.filename);
+        console.error("Line:", event.lineno);
+        console.error("Column:", event.colno);
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        console.error("UNHANDLED PROMISE REJECTION:", event.reason);
+      });
+    </script>
     <script type="module" src="js/admin.js"></script>
   </body>
 </html>

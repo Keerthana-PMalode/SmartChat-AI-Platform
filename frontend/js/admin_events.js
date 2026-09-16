@@ -23,7 +23,10 @@ class EventBusClass {
   emit(event, data = {}) {
     const handlers = this.events[event];
 
-    if (!handlers || handlers.length === 0) return;
+    if (!handlers || handlers.length === 0) {
+      console.warn(`[EventBus] No listeners for event: ${event}`);
+      return;
+    }
 
     handlers.forEach((callback) => {
       try {

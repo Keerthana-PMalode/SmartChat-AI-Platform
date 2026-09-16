@@ -1,747 +1,57 @@
 import { EventBus } from "./admin_events.js";
-import { modalManager } from "./modal_manager.js";
-import { api } from "./admin_api.js";
 
-let uiInitialized = false;
+/* =========================================================
+   GLOBAL UI REFERENCES
+========================================================= */
 
-const USERS_PER_PAGE = 10;
+const panels = document.querySelectorAll(".content-panel");
 
-let allUsers = [];
-let filteredUsers = [];
-let currentUsersPage = 1;
-let allChats = [];
+const navItems = document.querySelectorAll(".nav-item[data-section]");
 
+const pageTitle = document.getElementById("page-title");
 
-/* =========================
-   INIT
-========================= */
+/* =========================================================
+   COMMON HELPERS
+========================================================= */
 
-function initUI() {
-  if (uiInitialized) {
-    console.warn("UI already initialized");
-    return;
-  }
-
-  uiInitialized = true;
-
-  document.body.classList.add("fade-in");
-
-  setupSidebarNavigation();
-  setupLogout();
-  setupUsers();
-  setupChatHistory();
-  setupChatModal();
-  setupCreateUserDialog();
-  setupLogs();
-
-  const initialSection =
-    window.location.hash.substring(1) || "dashboard";
-
-  handleNavigation({
-    detail: {
-      section: initialSection,
-    },
-  });
-
-  window.addEventListener("hashchange", onHashChange);
-
-  EventBus.on("app:navigated", handleNavigation);
-  EventBus.on("app:loggedout", handleLogout);
+/**
+ * Convert a section identifier such as:
+ *
+ *     "chat-history"
+ *
+ * into:
+ *
+ *     "Chat History"
+ */
+function formatTitle(section) {
+  return section
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
-EventBus.on("app:ready", initUI);
-
-
-/* =========================
-   CREATE USER
-========================= */
-
-function setupCreateUserDialog() {
-  document
-    .getElementById("create-user-btn")
-    ?.addEventListener("click", openCreateUserDialog);
-
-  document
-    .getElementById("refresh-users-btn")
-    ?.addEventListener("click", () => {
-      EventBus.emit("users:refresh-requested");
-    });
-}
-
-/* =========================
-   CREATE USER
-========================= */
-
-function openCreateUserDialog() {
-  const username = prompt("Enter username:");
-
-  if (!username?.trim()) return;
-
-  const password = prompt("Enter password:");
-
-  if (!password) return;
-
-  const role = prompt(
-    "Enter role (admin/user):",
-    "user"
-  );
-
-  if (!role) return;
-
-  EventBus.emit("users:create-requested", {
-    username: username.trim(),
-    password,
-    role: role.trim().toLowerCase(),
-  });
-}
-
-
-/* =========================
-   NAVIGATION
-========================= */
-
-function setupSidebarNavigation() {
-  const navItems = document.querySelectorAll(
-    ".nav-item:not(.logout)"
-  );
-
-  navItems.forEach((item) => {
-    item.addEventListener("click", (event) => {
-      event.preventDefault();
-
-      const section = item.dataset.section;
-
-      if (!section) return;
-
-      window.location.hash = section;
-
-      EventBus.emit("app:navigate", {
-        section,
-      });
-    });
-  });
-}
-
-function onHashChange() {
-  const section =
-    window.location.hash.replace("#", "") || "dashboard";
-
-  EventBus.emit("app:navigate", {
-    section,
-  });
-}
-
-function handleNavigation(event) {
-  const section = event.detail?.section || "dashboard";
-
-  highlightActiveSection(section);
-  showContentPanel(section);
-  updatePageTitle(section);
-}
-
-function highlightActiveSection(section) {
-  const navItems = document.querySelectorAll(
-    ".nav-item:not(.logout)"
-  );
-
-  navItems.forEach((item) => {
-    item.classList.toggle(
-      "active",
-      item.dataset.section === section
-    );
-  });
-}
-
-function showContentPanel(section) {
-  const panels = document.querySelectorAll(".content-panel");
-
+/**
+ * Display the requested application section
+ * and update the active sidebar navigation item.
+ */
+function showSection(section) {
   panels.forEach((panel) => {
-    panel.classList.add("hidden");
+    panel.classList.toggle("hidden", panel.id !== `${section}-panel`);
   });
 
-  const panel =
-    document.getElementById(`${section}-panel`) ||
-    document.getElementById("dashboard-panel");
-
-  panel?.classList.remove("hidden");
-}
-
-function updatePageTitle(section) {
-  const pageTitle = document.getElementById("page-title");
-
-  if (!pageTitle) return;
-
-  const titles = {
-    dashboard: "Dashboard",
-    users: "Users",
-    "chat-history": "Chat History",
-    analytics: "Analytics",
-    settings: "Settings",
-    logs: "Logs",
-  };
-
-  pageTitle.textContent = titles[section] || "Dashboard";
-}
-
-/* =========================
-   USERS UI RENDERING
-========================= */
-
-function setupUsers() {
-  document
-    .getElementById("users-search-input")
-    ?.addEventListener("input", handleUserSearch);
-
-  document
-    .getElementById("users-tbody")
-    ?.addEventListener("click", handleUserTableClick);
-}
-
-EventBus.on("users:loading", (event) => {
-  const tbody = document.getElementById("users-tbody");
-
-  if (!tbody || !event.detail?.loading) return;
-
-  tbody.innerHTML = `
-    <tr>
-      <td colspan="5" class="text-center">
-        Loading...
-      </td>
-    </tr>
-  `;
-});
-
-EventBus.on("users:loaded", (event) => {
-  const users = event.detail?.users;
-
-  if (!Array.isArray(users)) return;
-
-  allUsers = [...users].sort((a, b) => a.id - b.id);
-  filteredUsers = [...allUsers];
-  currentUsersPage = 1;
-
-  renderUsersPage();
-});
-
-function renderUsersPage() {
-  const tbody = document.getElementById("users-tbody");
-
-  if (!tbody) return;
-
-  const totalUsers = filteredUsers.length;
-
-  const totalPages = Math.max(
-    1,
-    Math.ceil(totalUsers / USERS_PER_PAGE)
-  );
-
-  currentUsersPage = Math.min(
-    currentUsersPage,
-    totalPages
-  );
-
-  const startIndex =
-    (currentUsersPage - 1) * USERS_PER_PAGE;
-
-  const endIndex = Math.min(
-    startIndex + USERS_PER_PAGE,
-    totalUsers
-  );
-
-  const pageUsers = filteredUsers.slice(
-    startIndex,
-    endIndex
-  );
-
-  if (pageUsers.length === 0) {
-    tbody.innerHTML = `
-      <tr>
-        <td colspan="5" class="text-center">
-          No users found
-        </td>
-      </tr>
-    `;
-  } else {
-    tbody.innerHTML = pageUsers
-      .map(renderUserRow)
-      .join("");
-  }
-
-  updateUsersPagination(
-    totalUsers,
-    startIndex,
-    endIndex,
-    totalPages
-  );
-}
-
-function renderUserRow(user) {
-  return `
-    <tr>
-      <td>${escapeHtml(user.id)}</td>
-
-      <td>${escapeHtml(user.username)}</td>
-
-      <td>${escapeHtml(user.email ?? "-")}</td>
-
-      <td>
-        <span class="badge ${escapeHtml(user.role)}">
-          ${escapeHtml(user.role)}
-        </span>
-      </td>
-
-      <td>
-        <div class="actions">
-          <button
-            type="button"
-            class="delete-user-btn"
-            data-user-id="${escapeHtml(user.id)}"
-            title="Delete user"
-          >
-            Delete
-          </button>
-        </div>
-      </td>
-    </tr>
-  `;
-}
-
-function updateUsersPagination(
-  totalUsers,
-  startIndex,
-  endIndex,
-  totalPages
-) {
-  const summary = document.querySelector(
-    "#users-panel .section-footer span"
-  );
-
-  const pagination = document.querySelector(
-    "#users-panel .pagination"
-  );
-
-  if (!summary || !pagination) return;
-
-  summary.textContent =
-    totalUsers === 0
-      ? "Showing 0 users"
-      : `Showing ${startIndex + 1}-${endIndex} of ${totalUsers} users`;
-
-  pagination.innerHTML = "";
-
-  const previousButton = createPaginationButton(
-    "<",
-    currentUsersPage === 1,
-    () => {
-      currentUsersPage--;
-      renderUsersPage();
-    }
-  );
-
-  pagination.appendChild(previousButton);
-
-  for (let page = 1; page <= totalPages; page++) {
-    const pageButton = createPaginationButton(
-      page,
-      false,
-      () => {
-        currentUsersPage = page;
-        renderUsersPage();
-      }
-    );
-
-    if (page === currentUsersPage) {
-      pageButton.classList.add("active");
-    }
-
-    pagination.appendChild(pageButton);
-  }
-
-  const nextButton = createPaginationButton(
-    ">",
-    currentUsersPage === totalPages,
-    () => {
-      currentUsersPage++;
-      renderUsersPage();
-    }
-  );
-
-  pagination.appendChild(nextButton);
-}
-
-function createPaginationButton(
-  text,
-  disabled,
-  onClick
-) {
-  const button = document.createElement("button");
-
-  button.type = "button";
-  button.textContent = text;
-  button.disabled = disabled;
-  button.addEventListener("click", onClick);
-
-  return button;
-}
-
-function handleUserSearch(event) {
-  const searchTerm = event.target.value
-    .trim()
-    .toLowerCase();
-
-  filteredUsers = allUsers.filter((user) => {
-    return [
-      user.id,
-      user.username,
-      user.email,
-      user.role,
-    ].some((value) =>
-      String(value ?? "")
-        .toLowerCase()
-        .includes(searchTerm)
-    );
+  navItems.forEach((item) => {
+    item.classList.toggle("active", item.dataset.section === section);
   });
 
-  currentUsersPage = 1;
-
-  renderUsersPage();
-}
-
-function handleUserTableClick(event) {
-  const deleteButton = event.target.closest(
-    ".delete-user-btn"
-  );
-
-  if (!deleteButton) return;
-
-  const userId = deleteButton.dataset.userId;
-
-  if (!userId) return;
-
-  confirmDeleteUser(userId);
-}
-
-async function confirmDeleteUser(userId) {
-  const confirmed = await modalManager.confirm({
-    modalId: "confirm-modal",
-    title: "Delete User",
-    message: "Are you sure you want to delete this user?",
-    confirmText: "Delete",
-    cancelText: "Cancel",
-  });
-
-  if (!confirmed) return;
-
-  EventBus.emit("users:delete-requested", {
-    userId: Number(userId),
-  });
-}
-
-/* =========================
-   CHAT HISTORY
-========================= */
-
-function setupChatHistory() {
-  document.addEventListener(
-    "click",
-    handleChatHistoryClick
-  );
-}
-
-EventBus.on("chat-history:loaded", (event) => {
-  const chats = event.detail?.chats;
-
-  const tbody = document.getElementById(
-    "chat-history-tbody"
-  );
-
-  if (!tbody || !Array.isArray(chats)) return;
-
-  allChats = [...chats];
-
-  tbody.innerHTML = allChats
-    .map(renderChatHistoryRow)
-    .join("");
-});
-
-
-function renderChatHistoryRow(chat) {
-  return `
-    <tr>
-      <td>${escapeHtml(chat.id)}</td>
-      <td>${escapeHtml(chat.user)}</td>
-      <td>${escapeHtml(chat.date)}</td>
-      <td>${escapeHtml(chat.messages)}</td>
-      <td>${escapeHtml(chat.status)}</td>
-
-      <td>
-        <button
-          type="button"
-          class="view-chat-btn"
-          data-chat-id="${escapeHtml(chat.id)}"
-          data-user-id="${escapeHtml(chat.user_id)}"
-          data-session-id="${escapeHtml(chat.session_id)}"
-          data-chat-date="${escapeHtml(chat.date)}"
-        >
-          View
-        </button>
-      </td>
-    </tr>
-  `;
-}
-
-function handleChatHistoryClick(event) {
-  const viewButton = event.target.closest(".view-chat-btn");
-
-  if (!viewButton) return;
-
-  const chatId = Number(viewButton.dataset.chatId);
-  const userId = Number(viewButton.dataset.userId);
-  const sessionId = viewButton.dataset.sessionId;
-  const chatDate = viewButton.dataset.chatDate;
-
-  console.log("View clicked:", {
-    chatId,
-    userId,
-    sessionId,
-    chatDate,
-  });
-
-  if (!chatId || !userId) {
-    console.error("Missing chat ID or user ID");
-    return;
-  }
-
-  openChatView(
-    userId,
-    chatId,
-    sessionId,
-    chatDate
-  );
-}
-
-
-async function openChatView(
-  userId,
-  chatId,
-  sessionId,
-  chatDate
-) {
-  try {
-    const messages = await api.get(
-      `/admin/users/${userId}/chats/${chatId}/messages`
-    );
-
-    displayChatMessages(
-      chatId,
-      sessionId,
-      chatDate,
-      messages
-    );
-  } catch (error) {
-    console.error(
-      "Failed to load chat messages:",
-      error
-    );
+  if (pageTitle) {
+    pageTitle.textContent = formatTitle(section);
   }
 }
 
-
-/* =========================
-   CHAT MODAL
-========================= */
-
-function setupChatModal() {
-  document
-    .getElementById("close-chat-view")
-    ?.addEventListener("click", closeChatViewModal);
-
-  document
-    .getElementById("chat-view-modal")
-    ?.addEventListener("click", (event) => {
-      if (event.target.id === "chat-view-modal") {
-        closeChatViewModal();
-      }
-    });
-}
-
-
-function displayChatMessages(
-  chatId,
-  sessionId,
-  chatDate,
-  messages
-) {
-  const chatIdElement =
-    document.getElementById("chat-detail-id");
-
-  const sessionElement =
-    document.getElementById("chat-detail-session");
-
-  const dateElement =
-    document.getElementById("chat-detail-date");
-
-  const messagesContainer =
-    document.getElementById("chat-view-messages");
-
-  if (!messagesContainer) return;
-
-  if (chatIdElement) {
-    chatIdElement.textContent = chatId;
-  }
-
-  if (sessionElement) {
-    sessionElement.textContent =
-      sessionId || "-";
-  }
-
-  if (dateElement) {
-    dateElement.textContent =
-      formatChatDate(chatDate);
-  }
-
-  const chatMessages = Array.isArray(messages)
-    ? messages
-    : [];
-
-  if (chatMessages.length === 0) {
-    messagesContainer.innerHTML = `
-      <div class="no-messages">
-        No messages found.
-      </div>
-    `;
-  } else {
-    messagesContainer.innerHTML = chatMessages
-      .map(renderChatMessage)
-      .join("");
-  }
-
-  document
-    .getElementById("chat-view-modal")
-    ?.classList.remove("hidden");
-}
-
-function renderChatMessage(message) {
-  const role =
-    message.role === "user"
-      ? "User"
-      : "Chatbot";
-
-  return `
-    <div class="chat-message ${escapeHtml(message.role)}">
-
-      <div class="chat-message-bubble">
-
-        <div class="chat-message-role">
-          ${role}
-        </div>
-
-        <div class="chat-message-content">
-          ${escapeHtml(message.content)}
-        </div>
-
-        <div class="chat-message-time">
-          ${formatChatDate(message.created_at)}
-        </div>
-
-      </div>
-
-    </div>
-  `;
-}
-
-
-function closeChatViewModal() {
-  document
-    .getElementById("chat-view-modal")
-    ?.classList.add("hidden");
-}
-
-
-/* =========================
-   LOGOUT
-========================= */
-
-function setupLogout() {
-  document
-    .getElementById("logout-btn")
-    ?.addEventListener("click", handleLogoutClick);
-}
-
-async function handleLogoutClick(event) {
-  event.preventDefault();
-
-  const confirmed = await modalManager.confirm({
-    modalId: "confirm-modal",
-    title: "Logout",
-    message: "Are you sure you want to logout?",
-    confirmText: "Logout",
-    cancelText: "Stay",
-  });
-
-  if (confirmed) {
-    EventBus.emit("app:logout");
-  }
-}
-
-function handleLogout() {
-  document.body.classList.add("fade-out");
-
-  setTimeout(() => {
-    window.location.href = "/login.html";
-  }, 500);
-}
-
-/* =========================
-   LOGS
-========================= */
-
-function setupLogs() {
-  // Reserved for future logs-specific interactions.
-}
-
-EventBus.on("logs:loaded", (event) => {
-  const logs = event.detail?.logs;
-
-  const tbody = document.getElementById("logs-tbody");
-
-  if (!tbody || !Array.isArray(logs)) return;
-
-  tbody.innerHTML = logs
-    .map(
-      (log) => `
-        <tr>
-          <td>${escapeHtml(log.timestamp)}</td>
-          <td>${escapeHtml(log.user)}</td>
-          <td>${escapeHtml(log.action)}</td>
-        </tr>
-      `
-    )
-    .join("");
-});
-
-/* =========================
-   UTILITIES
-========================= */
-
-function formatChatDate(value) {
-  if (!value) return "-";
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return String(value);
-  }
-
-  return date.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-
+/**
+ * Escape HTML-sensitive characters before
+ * inserting dynamic values into HTML.
+ */
 function escapeHtml(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -750,3 +60,1350 @@ function escapeHtml(value) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+/**
+ * Format a chat date using the browser's
+ * local date/time formatting.
+ */
+function formatChatDate(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+/**
+ * Shorten a long session UUID for display
+ * while keeping the complete value available
+ * through the element's title attribute.
+ */
+function formatSessionId(sessionId) {
+  if (!sessionId || sessionId === "-") {
+    return "-";
+  }
+
+  if (sessionId.length > 20) {
+    return `${sessionId.slice(0, 8)}...${sessionId.slice(-8)}`;
+  }
+
+  return sessionId;
+}
+
+/**
+ * Normalize database message roles into the
+ * two UI roles used by the chat view.
+ */
+function normalizeMessageRole(role) {
+  const value = String(role ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (value === "user" || value === "human") {
+    return "user";
+  }
+
+  /*
+   * The database may contain:
+   * - assistant
+   * - chatbot
+   *
+   * Everything other than a user message
+   * is therefore treated as an assistant message.
+   */
+  return "assistant";
+}
+
+/* =========================================================
+   SIDEBAR NAVIGATION
+========================================================= */
+
+/**
+ * Request navigation when a sidebar item
+ * is clicked.
+ */
+navItems.forEach((item) => {
+  item.addEventListener("click", (event) => {
+    event.preventDefault();
+
+    const section = item.dataset.section;
+
+    window.location.hash = section;
+
+    EventBus.emit("app:navigate", {
+      section,
+    });
+  });
+});
+
+/**
+ * Update the visible section after the
+ * application navigation layer confirms navigation.
+ */
+EventBus.on("app:navigated", (event) => {
+  const section = event.detail?.section;
+
+  if (!section) {
+    return;
+  }
+
+  showSection(section);
+});
+
+/* =========================================================
+   USER CONTROLS
+========================================================= */
+
+const userSearchInput = document.getElementById("user-search");
+
+const userSearchButton = document.getElementById("user-search-btn");
+
+const userClearSearchButton = document.getElementById("user-clear-search-btn");
+
+/* =========================================================
+   USER MANAGEMENT
+========================================================= */
+
+const refreshUsersButton = document.getElementById("refresh-users-btn");
+
+const createUserButton = document.getElementById("create-user-btn");
+
+const createUserForm = document.getElementById("create-user-form");
+
+const createUserSubmitButton = document.getElementById(
+  "submit-create-user-btn",
+);
+
+const createUserModal = document.getElementById("create-user-modal");
+
+const cancelCreateUserButton = document.getElementById(
+  "cancel-create-user-btn",
+);
+
+const usersTableBody = document.getElementById("users-tbody");
+
+/* =========================================================
+   REFRESH USERS
+========================================================= */
+
+/**
+ * Request the Users service to reload the
+ * current Users state.
+ *
+ * The service is responsible for preserving
+ * the current search state.
+ */
+refreshUsersButton?.addEventListener("click", (event) => {
+  event.preventDefault();
+
+  console.log("UI: refresh users requested");
+
+  EventBus.emit("users:refresh-requested");
+});
+
+/* =========================================================
+   SEARCH USERS
+========================================================= */
+
+/**
+ * Submit the current Users search.
+ *
+ * An empty search string is valid and means:
+ *
+ *     show all users
+ */
+function handleUserSearchSubmit() {
+  if (!userSearchInput) {
+    console.error("User search input not found");
+
+    return;
+  }
+
+  const search = userSearchInput.value.trim();
+
+  console.log("UI: user search requested:", search);
+
+  updateUserClearSearchButton();
+
+  EventBus.emit("users:search-requested", {
+    search,
+  });
+}
+
+/* =========================================================
+   USER SEARCH UI
+========================================================= */
+
+/**
+ * Show the Clear Search button only
+ * when the search field contains text.
+ */
+function updateUserClearSearchButton() {
+  if (!userClearSearchButton || !userSearchInput) {
+    return;
+  }
+
+  const hasSearch = userSearchInput.value.trim().length > 0;
+
+  userClearSearchButton.classList.toggle("hidden", !hasSearch);
+}
+
+/* =========================================================
+   SEARCH - ENTER KEY
+========================================================= */
+
+userSearchInput?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+
+  event.preventDefault();
+
+  handleUserSearchSubmit();
+});
+
+/* =========================================================
+   SEARCH - BUTTON
+========================================================= */
+
+userSearchButton?.addEventListener("click", (event) => {
+  event.preventDefault();
+
+  handleUserSearchSubmit();
+});
+
+/* =========================================================
+   CLEAR USER SEARCH
+========================================================= */
+
+/**
+ * Clear the Users search and request
+ * the complete Users list again.
+ */
+userClearSearchButton?.addEventListener("click", (event) => {
+  event.preventDefault();
+
+  console.log("UI: clearing user search");
+
+  if (userSearchInput) {
+    userSearchInput.value = "";
+  }
+
+  updateUserClearSearchButton();
+
+  EventBus.emit("users:search-requested", {
+    search: "",
+  });
+});
+
+/* =========================================================
+   SEARCH INPUT STATE
+========================================================= */
+
+/**
+ * Keep the Clear Search button synchronized
+ * with the current input value.
+ */
+userSearchInput?.addEventListener("input", updateUserClearSearchButton);
+
+/**
+ * Initialize the Clear Search button state
+ * when the page loads.
+ */
+updateUserClearSearchButton();
+
+/* =========================================================
+   CREATE USER MODAL
+========================================================= */
+
+/**
+ * Open the Create User modal.
+ */
+createUserButton?.addEventListener("click", () => {
+  console.log("UI: opening create user modal");
+
+  createUserModal?.classList.remove("hidden");
+
+  createUserModal?.setAttribute("aria-hidden", "false");
+
+  document.getElementById("create-user-username")?.focus();
+});
+
+/**
+ * Close the Create User modal
+ * and reset the form.
+ */
+cancelCreateUserButton?.addEventListener("click", () => {
+  console.log("UI: cancel create user");
+
+  createUserForm?.reset();
+
+  createUserModal?.classList.add("hidden");
+
+  createUserModal?.setAttribute("aria-hidden", "true");
+
+  updateCreateUserButton();
+});
+
+/* =========================================================
+   CREATE USER
+========================================================= */
+
+/**
+ * Submit the Create User form.
+ */
+createUserForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  if (!createUserForm.checkValidity()) {
+    createUserForm.reportValidity();
+
+    return;
+  }
+
+  const username = document
+    .getElementById("create-user-username")
+    ?.value.trim();
+
+  const password = document.getElementById("create-user-password")?.value;
+
+  const role = document.getElementById("create-user-role")?.value;
+
+  console.log("UI: creating user:", {
+    username,
+    role,
+  });
+
+  EventBus.emit("users:create-requested", {
+    username,
+    password,
+    role,
+  });
+});
+
+/* =========================================================
+   CREATE USER FORM VALIDATION
+========================================================= */
+
+/**
+ * Enable the Create User submit button
+ * only when the form is valid.
+ */
+function updateCreateUserButton() {
+  if (!createUserForm || !createUserSubmitButton) {
+    return;
+  }
+
+  createUserSubmitButton.disabled = !createUserForm.checkValidity();
+}
+
+createUserForm?.addEventListener("input", updateCreateUserButton);
+
+createUserForm?.addEventListener("change", updateCreateUserButton);
+
+updateCreateUserButton();
+
+/* =========================================================
+   USER CREATED
+========================================================= */
+
+/**
+ * Close and reset the Create User modal
+ * after successful creation.
+ */
+EventBus.on("users:created", () => {
+  console.log("UI: user created successfully");
+
+  createUserForm?.reset();
+
+  createUserModal?.classList.add("hidden");
+
+  createUserModal?.setAttribute("aria-hidden", "true");
+
+  updateCreateUserButton();
+});
+
+/* =========================================================
+   USERS LOADING STATE
+========================================================= */
+
+/**
+ * Display a loading row while Users
+ * are being retrieved.
+ */
+EventBus.on("users:loading", (event) => {
+  const loading = event.detail?.loading;
+
+  console.log("UI: users loading:", loading);
+
+  if (!usersTableBody) {
+    return;
+  }
+
+  if (loading) {
+    usersTableBody.innerHTML = `
+        <tr>
+          <td
+            colspan="4"
+            style="text-align: center;"
+          >
+            Loading users...
+          </td>
+        </tr>
+      `;
+  }
+});
+
+/* =========================================================
+   USERS ERROR
+========================================================= */
+
+/**
+ * Display a friendly error state
+ * when Users cannot be loaded.
+ */
+EventBus.on("users:error", (event) => {
+  const message = event.detail?.message || "Failed to load users.";
+
+  console.error("UI: users error:", message);
+
+  if (!usersTableBody) {
+    return;
+  }
+
+  usersTableBody.innerHTML = `
+      <tr>
+        <td
+          colspan="4"
+          style="
+            text-align: center;
+            color: red;
+          "
+        >
+          ${escapeHtml(message)}
+        </td>
+      </tr>
+    `;
+});
+
+/* =========================================================
+   RENDER USERS
+========================================================= */
+
+/**
+ * Render the Users returned by
+ * the Users service.
+ *
+ * The service is responsible for:
+ *
+ * - fetching users
+ * - sorting users
+ * - applying search
+ *
+ * The UI only renders the result.
+ */
+EventBus.on("users:loaded", (event) => {
+  const users = event.detail?.users ?? [];
+
+  const search = event.detail?.search ?? "";
+
+  console.log("UI: users loaded:", {
+    users,
+    search,
+  });
+
+  if (!usersTableBody) {
+    console.error("Users table body not found");
+
+    return;
+  }
+
+  usersTableBody.innerHTML = "";
+
+  /* -------------------------------------------------------
+       EMPTY STATE
+    ------------------------------------------------------- */
+
+  if (users.length === 0) {
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+        <td
+          colspan="4"
+          style="text-align: center;"
+        >
+          ${search ? "No users found for this search." : "No users found."}
+        </td>
+      `;
+
+    usersTableBody.appendChild(row);
+
+    return;
+  }
+
+  /* -------------------------------------------------------
+       USER ROWS
+    ------------------------------------------------------- */
+
+  users.forEach((user) => {
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+        <td>
+          ${escapeHtml(user.id)}
+        </td>
+
+        <td>
+          ${escapeHtml(user.username)}
+        </td>
+
+        <td>
+          ${escapeHtml(user.role)}
+        </td>
+
+        <td>
+          <button
+            type="button"
+            class="delete-user-btn"
+            data-user-id="${escapeHtml(user.id)}"
+          >
+            Delete
+          </button>
+        </td>
+      `;
+
+    usersTableBody.appendChild(row);
+  });
+});
+
+/* =========================================================
+   DELETE USER
+========================================================= */
+
+/**
+ * Use event delegation because Delete
+ * buttons are dynamically generated.
+ */
+usersTableBody?.addEventListener("click", (event) => {
+  const deleteButton = event.target.closest(".delete-user-btn");
+
+  if (!deleteButton) {
+    return;
+  }
+
+  const userId = deleteButton.dataset.userId;
+
+  if (!userId) {
+    console.error("Delete button has no user ID");
+
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Are you sure you want to delete this user?",
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  console.log("UI: delete user requested:", userId);
+
+  EventBus.emit("users:delete-requested", {
+    userId: Number(userId),
+  });
+});
+
+/* =========================================================
+   CHAT HISTORY
+========================================================= */
+
+const chatHistoryTableBody = document.getElementById("chat-history-tbody");
+
+const chatCount = document.getElementById("chat-count");
+
+const chatPagination = document.getElementById("chat-pagination");
+
+const refreshChatButton = document.getElementById("refresh-chat-btn");
+
+const exportChatButton = document.getElementById("export-chat-btn");
+
+const chatSearchInput = document.getElementById("chat-search");
+
+const chatSearchButton = document.getElementById("chat-search-btn");
+
+const chatClearSearchButton = document.getElementById("chat-clear-search-btn");
+
+/* =========================================================
+   RENDER CHAT HISTORY
+========================================================= */
+
+/**
+ * Render chat-history records whenever the
+ * chat history service publishes loaded data.
+ */
+EventBus.on("chat-history:loaded", (event) => {
+  const data = event.detail ?? {};
+
+  const chats = data.chats ?? [];
+
+  const total = data.total ?? 0;
+
+  const page = data.page ?? 1;
+
+  const pageSize = data.pageSize ?? 10;
+
+  const totalPages = data.totalPages ?? 1;
+
+  console.log("UI: chat history loaded:", data);
+
+  if (!chatHistoryTableBody) {
+    console.error("Chat history table body not found");
+    return;
+  }
+
+  chatHistoryTableBody.innerHTML = "";
+
+  /* -------------------------------------------------------
+       EMPTY STATE
+    ------------------------------------------------------- */
+
+  if (chats.length === 0) {
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+        <td
+          colspan="6"
+          style="text-align: center;"
+        >
+          No chat history found.
+        </td>
+      `;
+
+    chatHistoryTableBody.appendChild(row);
+
+    if (chatCount) {
+      chatCount.textContent = "Showing 0 conversations";
+    }
+
+    renderChatPagination(page, totalPages);
+
+    return;
+  }
+
+  /* -------------------------------------------------------
+       CHAT ROWS
+    ------------------------------------------------------- */
+
+  chats.forEach((chat) => {
+    const row = document.createElement("tr");
+
+    row.innerHTML = `
+        <td>
+          ${escapeHtml(chat.id)}
+        </td>
+
+        <td>
+          ${escapeHtml(chat.user)}
+        </td>
+
+        <td>
+          ${formatChatDate(chat.date)}
+        </td>
+
+        <td>
+          ${escapeHtml(chat.messages)}
+        </td>
+
+        <td>
+          <span class="status-badge">
+            ${escapeHtml(chat.status)}
+          </span>
+        </td>
+
+        <td>
+          <button
+            type="button"
+            class="view-chat-btn"
+            data-chat-id="${chat.id}"
+            data-user-id="${chat.user_id}"
+            data-user="${escapeHtml(chat.user)}"
+            data-session-id="${escapeHtml(chat.session_id)}"
+            data-date="${escapeHtml(chat.date)}"
+          >
+            <i class="fas fa-eye"></i>
+            View
+          </button>
+        </td>
+      `;
+
+    chatHistoryTableBody.appendChild(row);
+  });
+
+  /* -------------------------------------------------------
+       RESULT COUNT
+    ------------------------------------------------------- */
+
+  if (chatCount) {
+    const start = (page - 1) * pageSize + 1;
+
+    const end = Math.min(page * pageSize, total);
+
+    chatCount.textContent = `Showing ${start}-${end} of ${total} conversations`;
+  }
+
+  /* -------------------------------------------------------
+       PAGINATION
+    ------------------------------------------------------- */
+
+  renderChatPagination(page, totalPages);
+});
+
+/* =========================================================
+   CHAT HISTORY LOADING STATE
+========================================================= */
+
+/**
+ * Display a loading row while chat history
+ * is being retrieved.
+ */
+EventBus.on("chat-history:loading", (event) => {
+  const loading = event.detail?.loading;
+
+  console.log("UI: chat history loading:", loading);
+
+  if (!chatHistoryTableBody) {
+    return;
+  }
+
+  if (loading) {
+    chatHistoryTableBody.innerHTML = `
+        <tr>
+          <td
+            colspan="6"
+            style="text-align: center;"
+          >
+            Loading chat history...
+          </td>
+        </tr>
+      `;
+  }
+});
+
+/* =========================================================
+   CHAT HISTORY ERROR
+========================================================= */
+
+/**
+ * Display a user-friendly error state when
+ * chat history cannot be loaded.
+ */
+EventBus.on("chat-history:error", (event) => {
+  const error = event.detail?.error;
+
+  console.error("UI: chat history error:", error);
+
+  if (!chatHistoryTableBody) {
+    return;
+  }
+
+  chatHistoryTableBody.innerHTML = `
+      <tr>
+        <td
+          colspan="6"
+          style="text-align: center; color: red;"
+        >
+          Failed to load chat history.
+        </td>
+      </tr>
+    `;
+});
+
+/* =========================================================
+   CHAT PAGINATION
+========================================================= */
+
+/**
+ * Render Previous, page-number, and Next
+ * pagination controls.
+ */
+function renderChatPagination(currentPage, totalPages) {
+  if (!chatPagination) {
+    return;
+  }
+
+  chatPagination.innerHTML = "";
+
+  if (totalPages <= 1) {
+    return;
+  }
+
+  /**
+   * Create a pagination button that requests
+   * the specified page through the EventBus.
+   */
+  const createButton = (label, page, disabled = false) => {
+    const button = document.createElement("button");
+
+    button.type = "button";
+    button.textContent = label;
+    button.disabled = disabled;
+    button.className = "pagination-btn";
+
+    button.addEventListener("click", () => {
+      EventBus.emit("chat-history:page-requested", {
+        page,
+      });
+    });
+
+    return button;
+  };
+
+  /* -------------------------------------------------------
+     PREVIOUS
+  ------------------------------------------------------- */
+
+  chatPagination.appendChild(
+    createButton("Previous", currentPage - 1, currentPage <= 1),
+  );
+
+  /* -------------------------------------------------------
+     PAGE NUMBERS
+  ------------------------------------------------------- */
+
+  for (let page = 1; page <= totalPages; page++) {
+    const button = createButton(String(page), page);
+
+    if (page === currentPage) {
+      button.classList.add("active");
+    }
+
+    chatPagination.appendChild(button);
+  }
+
+  /* -------------------------------------------------------
+     NEXT
+  ------------------------------------------------------- */
+
+  chatPagination.appendChild(
+    createButton("Next", currentPage + 1, currentPage >= totalPages),
+  );
+}
+
+/* =========================================================
+   REFRESH CHAT HISTORY
+========================================================= */
+
+/**
+ * Request the chat-history service to reload
+ * the current chat-history state.
+ *
+ * The service is responsible for deciding
+ * whether that means refreshing the current
+ * page/search state.
+ */
+refreshChatButton?.addEventListener("click", (event) => {
+  event.preventDefault();
+
+  console.log("UI: refresh chat history requested");
+
+  EventBus.emit("chat-history:refresh-requested");
+});
+
+/* =========================================================
+   EXPORT CHAT HISTORY
+========================================================= */
+
+/**
+ * Request a CSV export of chat history.
+ */
+exportChatButton?.addEventListener("click", () => {
+  console.log("UI: export chat history requested");
+
+  EventBus.emit("chat-history:export-requested");
+});
+
+/* =========================================================
+   CHAT HISTORY SEARCH
+========================================================= */
+
+/**
+ * Submit the current search query.
+ *
+ * An empty query is valid and represents
+ * "show all chat history".
+ */
+function handleSearchSubmit() {
+  if (!chatSearchInput) {
+    console.error("Chat search input not found");
+    return;
+  }
+
+  const search = chatSearchInput.value.trim();
+
+  console.log("UI: Chat search requested for:", search);
+
+  updateClearSearchButton();
+
+  EventBus.emit("chat-history:search-requested", {
+    search,
+  });
+}
+
+/* =========================================================
+   SEARCH UI
+========================================================= */
+
+/**
+ * Show the Clear Search button only when
+ * the search field contains text.
+ */
+function updateClearSearchButton() {
+  if (!chatClearSearchButton || !chatSearchInput) {
+    return;
+  }
+
+  const hasSearch = chatSearchInput.value.trim().length > 0;
+
+  chatClearSearchButton.classList.toggle("hidden", !hasSearch);
+}
+
+/* =========================================================
+   SEARCH - ENTER KEY
+========================================================= */
+
+chatSearchInput?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+
+  event.preventDefault();
+
+  handleSearchSubmit();
+});
+
+/* =========================================================
+   SEARCH - BUTTON
+========================================================= */
+
+chatSearchButton?.addEventListener("click", (event) => {
+  event.preventDefault();
+
+  handleSearchSubmit();
+});
+
+/* =========================================================
+   CLEAR SEARCH
+========================================================= */
+
+/**
+ * Clear the search field and request the
+ * complete chat-history list again.
+ */
+chatClearSearchButton?.addEventListener("click", (event) => {
+  event.preventDefault();
+
+  console.log("UI: clearing chat history search");
+
+  if (chatSearchInput) {
+    chatSearchInput.value = "";
+  }
+
+  updateClearSearchButton();
+
+  EventBus.emit("chat-history:search-requested", {
+    search: "",
+  });
+});
+
+/* =========================================================
+   SEARCH INPUT STATE
+========================================================= */
+
+/**
+ * Keep the Clear Search button synchronized
+ * with the current input value.
+ */
+chatSearchInput?.addEventListener("input", updateClearSearchButton);
+
+/**
+ * Initialize the Clear Search button state
+ * when the page first loads.
+ */
+updateClearSearchButton();
+
+/* =========================================================
+   VIEW CHAT
+========================================================= */
+
+/**
+ * Use event delegation because View buttons
+ * are dynamically generated with each table render.
+ */
+chatHistoryTableBody?.addEventListener("click", (event) => {
+  const button = event.target.closest(".view-chat-btn");
+
+  if (!button) {
+    return;
+  }
+
+  const chatId = Number(button.dataset.chatId);
+
+  const userId = Number(button.dataset.userId);
+
+  const user = button.dataset.user ?? "";
+
+  const sessionId = button.dataset.sessionId ?? "";
+
+  const date = button.dataset.date ?? "";
+
+  console.log("UI: view chat requested:", {
+    chatId,
+    userId,
+    user,
+    sessionId,
+    date,
+  });
+
+  EventBus.emit("chat-history:view-requested", {
+    chatId,
+    userId,
+    user,
+    sessionId,
+    date,
+  });
+});
+
+/* =========================================================
+   CHAT VIEW MODAL
+========================================================= */
+
+const chatViewModal = document.getElementById("chat-view-modal");
+
+const chatModalClose = document.getElementById("chat-modal-close");
+
+const chatDetailId = document.getElementById("chat-detail-id");
+
+const chatDetailUser = document.getElementById("chat-detail-user");
+
+const chatDetailSession = document.getElementById("chat-detail-session");
+
+const chatDetailDate = document.getElementById("chat-detail-date");
+
+const chatViewMessages = document.getElementById("chat-view-messages");
+
+const chatMessageCount = document.getElementById("chat-message-count");
+
+/* =========================================================
+   CLOSE CHAT VIEW MODAL
+========================================================= */
+
+/**
+ * Hide the chat-view modal.
+ */
+function closeChatViewModal() {
+  if (!chatViewModal) {
+    return;
+  }
+
+  chatViewModal.classList.add("hidden");
+
+  chatViewModal.setAttribute("aria-hidden", "true");
+}
+
+/**
+ * Close button.
+ */
+chatModalClose?.addEventListener("click", closeChatViewModal);
+
+/**
+ * Close when the user clicks the modal backdrop.
+ */
+chatViewModal?.addEventListener("click", (event) => {
+  if (event.target === chatViewModal) {
+    closeChatViewModal();
+  }
+});
+
+/**
+ * Close the modal when Escape is pressed.
+ */
+document.addEventListener("keydown", (event) => {
+  if (
+    event.key === "Escape" &&
+    chatViewModal &&
+    !chatViewModal.classList.contains("hidden")
+  ) {
+    closeChatViewModal();
+  }
+});
+
+/* =========================================================
+   VIEW CHAT REQUESTED
+========================================================= */
+
+/**
+ * Populate and open the chat-view modal
+ * when a chat is selected from the table.
+ */
+EventBus.on("chat-history:view-requested", (event) => {
+  const { chatId, userId, sessionId, date, user } = event.detail ?? {};
+
+  console.log("UI: opening chat view:", event.detail);
+
+  /* -------------------------------------------------------
+       CHAT ID
+    ------------------------------------------------------- */
+
+  if (chatDetailId) {
+    chatDetailId.textContent = chatId ?? "-";
+  }
+
+  /* -------------------------------------------------------
+       USER
+    ------------------------------------------------------- */
+
+  if (chatDetailUser) {
+    chatDetailUser.textContent = user ?? "-";
+  }
+
+  /* -------------------------------------------------------
+       SESSION ID
+    ------------------------------------------------------- */
+
+  if (chatDetailSession) {
+    const session = sessionId || "-";
+
+    chatDetailSession.textContent = formatSessionId(session);
+
+    chatDetailSession.title = session;
+  }
+
+  /* -------------------------------------------------------
+       DATE
+    ------------------------------------------------------- */
+
+  if (chatDetailDate) {
+    chatDetailDate.textContent = formatChatDate(date);
+  }
+
+  /* -------------------------------------------------------
+       RESET MESSAGE AREA
+    ------------------------------------------------------- */
+
+  if (chatViewMessages) {
+    chatViewMessages.innerHTML = `
+        <div class="chat-loading">
+          <i class="fas fa-spinner fa-spin"></i>
+          Loading conversation...
+        </div>
+      `;
+  }
+
+  if (chatMessageCount) {
+    chatMessageCount.textContent = "Loading...";
+  }
+
+  /* -------------------------------------------------------
+       OPEN MODAL
+    ------------------------------------------------------- */
+
+  chatViewModal?.classList.remove("hidden");
+
+  chatViewModal?.setAttribute("aria-hidden", "false");
+});
+
+/* =========================================================
+   CHAT MESSAGES LOADED
+========================================================= */
+
+/**
+ * Render the messages returned by the
+ * chat-message service.
+ */
+EventBus.on("chat-messages:loaded", (event) => {
+  const messages = event.detail?.messages ?? [];
+
+  console.log("UI: chat messages loaded:", messages);
+
+  if (!chatViewMessages) {
+    console.error("Chat messages container not found");
+    return;
+  }
+
+  /* -------------------------------------------------------
+       MESSAGE COUNT
+    ------------------------------------------------------- */
+
+  if (chatMessageCount) {
+    chatMessageCount.textContent = `${messages.length} ${
+      messages.length === 1 ? "message" : "messages"
+    }`;
+  }
+
+  /* -------------------------------------------------------
+       CLEAR EXISTING CONTENT
+    ------------------------------------------------------- */
+
+  chatViewMessages.innerHTML = "";
+
+  /* -------------------------------------------------------
+       EMPTY STATE
+    ------------------------------------------------------- */
+
+  if (messages.length === 0) {
+    chatViewMessages.innerHTML = `
+        <div class="chat-empty">
+          <div class="chat-empty-icon">
+            <i class="fas fa-comments"></i>
+          </div>
+
+          <h3>No messages yet</h3>
+
+          <p>
+            This conversation does not contain
+            any messages.
+          </p>
+        </div>
+      `;
+
+    return;
+  }
+
+  /* -------------------------------------------------------
+       RENDER MESSAGES
+    ------------------------------------------------------- */
+
+  messages.forEach((message) => {
+    const messageElement = document.createElement("div");
+
+    const role = normalizeMessageRole(message.role);
+
+    const content = message.content ?? "";
+
+    const createdAt = message.created_at;
+
+    messageElement.className = `chat-view-message ${role}`;
+
+    /* -----------------------------------------------------
+         AVATAR
+      ----------------------------------------------------- */
+
+    const avatar = document.createElement("div");
+
+    avatar.className = "chat-message-avatar";
+
+    avatar.innerHTML =
+      role === "user"
+        ? `<i class="fas fa-user"></i>`
+        : `<i class="fas fa-robot"></i>`;
+
+    /* -----------------------------------------------------
+         MESSAGE BODY
+      ----------------------------------------------------- */
+
+    const body = document.createElement("div");
+
+    body.className = "chat-message-body";
+
+    /* -----------------------------------------------------
+         MESSAGE HEADER
+      ----------------------------------------------------- */
+
+    const header = document.createElement("div");
+
+    header.className = "chat-message-header";
+
+    /* Sender */
+
+    const sender = document.createElement("span");
+
+    sender.className = "chat-message-sender";
+
+    sender.textContent = role === "user" ? "User" : "SmartChat";
+
+    /* Timestamp */
+
+    const timestamp = document.createElement("span");
+
+    timestamp.className = "chat-message-time";
+
+    timestamp.textContent = formatChatDate(createdAt);
+
+    header.appendChild(sender);
+
+    header.appendChild(timestamp);
+
+    /* -----------------------------------------------------
+         MESSAGE CONTENT
+      ----------------------------------------------------- */
+
+    const contentElement = document.createElement("div");
+
+    contentElement.className = "chat-message-content";
+
+    contentElement.textContent = content;
+
+    /* -----------------------------------------------------
+         ASSEMBLE MESSAGE
+      ----------------------------------------------------- */
+
+    body.appendChild(header);
+
+    body.appendChild(contentElement);
+
+    messageElement.appendChild(avatar);
+
+    messageElement.appendChild(body);
+
+    chatViewMessages.appendChild(messageElement);
+  });
+
+  /* -------------------------------------------------------
+       SCROLL TO LATEST MESSAGE
+    ------------------------------------------------------- */
+
+  chatViewMessages.scrollTop = chatViewMessages.scrollHeight;
+});
+
+/* =========================================================
+   CHAT MESSAGE ERROR
+========================================================= */
+
+/**
+ * Display a friendly error message when the
+ * conversation messages cannot be loaded.
+ */
+EventBus.on("chat-messages:error", (event) => {
+  console.error("UI: failed to load chat messages:", event.detail?.error);
+
+  if (chatMessageCount) {
+    chatMessageCount.textContent = "Unable to load";
+  }
+
+  if (chatViewMessages) {
+    chatViewMessages.innerHTML = `
+        <div class="chat-error">
+          <div class="chat-error-icon">
+            <i class="fas fa-exclamation-circle"></i>
+          </div>
+
+          <h3>Unable to load conversation</h3>
+
+          <p>
+            Something went wrong while loading
+            the messages. Please try again.
+          </p>
+        </div>
+      `;
+  }
+});

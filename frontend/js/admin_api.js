@@ -4,6 +4,10 @@ const API_CONFIG = {
   RETRIES: 1,
 };
 
+/* =========================
+AUTH TOKEN
+========================= */
+
 function getToken() {
   return localStorage.getItem("authToken");
 }
@@ -11,6 +15,10 @@ function getToken() {
 function clearToken() {
   localStorage.removeItem("authToken");
 }
+
+/* =========================
+API REQUEST
+========================= */
 
 async function request(endpoint, options = {}) {
   const url = `${API_CONFIG.BASE_URL}${endpoint}`;
@@ -27,6 +35,8 @@ async function request(endpoint, options = {}) {
     try {
       const token = getToken();
 
+      /* ========================= REQUEST ========================= */
+
       const response = await fetch(url, {
         method: options.method || "GET",
         headers: {
@@ -42,11 +52,15 @@ async function request(endpoint, options = {}) {
 
       clearTimeout(timeoutId);
 
+      /* ========================= RESPONSE ========================= */
+
       const data = await handleResponse(response);
 
       return data; // success → exit loop
     } catch (error) {
       clearTimeout(timeoutId);
+
+      /* ========================= RETRY ========================= */
 
       const isLastAttempt = attempt === retries;
       const shouldRetryRequest = isRetryable(error) && options.method === "GET";
@@ -56,11 +70,17 @@ async function request(endpoint, options = {}) {
         continue;
       }
 
+      /* ========================= FINAL ERROR ========================= */
+
       handleError(error);
       throw error;
     }
   }
 }
+
+/* =========================
+RETRY HANDLING
+========================= */
 
 function isRetryable(error) {
   return (
@@ -69,12 +89,18 @@ function isRetryable(error) {
   );
 }
 
+/* =========================
+RESPONSE HANDLING
+========================= */
+
 async function handleResponse(response) {
   if (response.status === 401) {
     clearToken();
     window.location.href = "/login.html";
     throw new Error("Unauthorized");
   }
+
+  /* ========================= API ERROR ========================= */
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -84,9 +110,17 @@ async function handleResponse(response) {
   return response.json();
 }
 
+/* =========================
+ERROR LOGGING
+========================= */
+
 function handleError(error) {
   console.error("API Error:", error.message);
 }
+
+/* =========================
+API CLIENT
+========================= */
 
 export const api = {
   get(endpoint) {
