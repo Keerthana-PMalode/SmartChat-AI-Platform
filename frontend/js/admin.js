@@ -1,3 +1,5 @@
+import { initAnalyticsSection } from "./analytics.js";
+
 import { EventBus } from "./admin_events.js";
 
 import { setCurrentSection, canNavigateTo } from "./admin_state.js";
@@ -247,7 +249,13 @@ function handleNavigationRequest(section) {
    * Prevent navigation to sections that the
    * current application state does not allow.
    */
-  if (!canNavigateTo(section)) {
+  console.log("NAVIGATION REQUEST:", section);
+
+  const allowed = canNavigateTo(section);
+
+  console.log("NAVIGATION ALLOWED:", allowed);
+
+  if (!allowed) {
     return;
   }
 
@@ -271,6 +279,14 @@ function handleNavigationRequest(section) {
 
   if (section === "chat-history") {
     fetchChatHistory();
+  }
+
+  /* -------------------------------------------------------
+     LOAD ANALYTICS SECTION
+  ------------------------------------------------------- */
+
+  if (section === "analytics") {
+    console.log("ANALYTICS SECTION SELECTED");
   }
 }
 
@@ -350,6 +366,8 @@ function initController() {
 
     return;
   }
+
+  initAnalyticsSection();
 
   /* -------------------------------------------------------
      INITIAL PAGE STATE

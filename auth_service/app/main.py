@@ -5,6 +5,7 @@ from app.core.database import Base, engine
 
 # Import models before create_all()
 from app.routes import chat
+from app.routes import admin_analytics
 from app.routes.admin import router as admin_router
 from app.routes.login import router as login_router
 from app.routes.token import router as token_router
@@ -29,3 +30,8 @@ app.include_router(login_router)
 app.include_router(token_router)
 app.include_router(chat.router, tags=["Chat"])
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
+app.include_router(
+    admin_analytics.router,
+    prefix="/admin/analytics",
+    tags=["Admin Analytics"],
+)

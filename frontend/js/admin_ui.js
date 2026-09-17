@@ -146,6 +146,26 @@ navItems.forEach((item) => {
 });
 
 /**
+ * Update the page title in the topbar.
+ */
+function updatePageTitle(section) {
+  const pageTitle = document.getElementById("page-title");
+
+  if (!pageTitle) {
+    return;
+  }
+
+  const titles = {
+    dashboard: "Dashboard",
+    "chat-history": "Chat History",
+    users: "Users",
+    analytics: "Analytics",
+  };
+
+  pageTitle.textContent = titles[section] || "Dashboard";
+}
+
+/**
  * Update the visible section after the
  * application navigation layer confirms navigation.
  */
@@ -156,7 +176,22 @@ EventBus.on("app:navigated", (event) => {
     return;
   }
 
-  showSection(section);
+  document.querySelectorAll(".content-section").forEach((element) => {
+    element.hidden = true;
+  });
+
+  const target = document.getElementById(`${section}-section`);
+
+  if (!target) {
+    console.warn(`ADMIN UI: section not found: ${section}-section`);
+
+    return;
+  }
+
+  target.hidden = false;
+
+  // Update the topbar title.
+  updatePageTitle(section);
 });
 
 /* =========================================================

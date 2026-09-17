@@ -314,7 +314,6 @@ def get_chat_messages(
     return messages
 
 
-
 @router.delete("/chat/history/{session_id}")
 def delete_chat_history(
     session_id: str, admin=Depends(require_admin), db: Session = Depends(get_db)

@@ -8,6 +8,7 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
     />
     <link rel="stylesheet" href="css/admin.css" />
+    <link rel="stylesheet" href="./css/analytics.css" />
   </head>
   <body>
     <div id="app-content" class="dashboard">
@@ -62,13 +63,13 @@
           </div>
         </header>
         <!-- Dashboard -->
-        <section id="dashboard-panel" class="content-panel">
+        <section id="dashboard-section" class="content-section">
           <div class="card">
             <h3>Dashboard</h3>
             <p>Welcome to the admin dashboard.</p>
           </div>
         </section>
-        <section id="users-panel" class="content-panel hidden">
+        <section id="users-section" class="content-section" hidden>
           <div class="section-card">
             <!-- Header -->
             <div class="section-header">
@@ -197,7 +198,7 @@
           </div>
         </div>
         <!-- Chat History -->
-        <section id="chat-history-panel" class="content-panel hidden">
+        <section id="chat-history-section" class="content-section" hidden>
           <div class="section-card">
             <!-- Header -->
             <div class="section-header">
@@ -353,8 +354,174 @@
           </div>
         </div>
         <!-- Analytics -->
-        <section id="analytics-panel" class="content-panel hidden">
-          <div class="card">Analytics</div>
+        <section id="analytics-section" class="content-section" hidden>
+          <div class="analytics-page">
+            <!-- Header -->
+            <div class="analytics-header">
+              <div>
+                <h2>Analytics</h2>
+                <p>
+                  Monitor chat activity, users, sessions, and message usage.
+                </p>
+              </div>
+            </div>
+            <!-- Filters -->
+            <div class="analytics-filters">
+              <div class="analytics-filter-group">
+                <label for="analytics-date-preset"> Range </label>
+                <select id="analytics-date-preset">
+                  <option value="">Custom</option>
+                  <option value="7">Last 7 days</option>
+                  <option value="30" selected>Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="365">Last 365 days</option>
+                </select>
+              </div>
+              <div class="analytics-filter-group">
+                <label for="analytics-start-date"> Start date </label>
+                <input id="analytics-start-date" type="date" />
+              </div>
+              <div class="analytics-filter-group">
+                <label for="analytics-end-date"> End date </label>
+                <input id="analytics-end-date" type="date" />
+              </div>
+              <button
+                id="analytics-apply-filter"
+                class="analytics-button analytics-button-primary"
+                type="button"
+              >
+                Apply
+              </button>
+              <button
+                id="analytics-refresh"
+                class="analytics-button analytics-button-secondary"
+                type="button"
+              >
+                Refresh
+              </button>
+              <button
+                id="analytics-export"
+                class="analytics-button analytics-button-secondary"
+                type="button"
+              >
+                Export CSV
+              </button>
+            </div>
+            <!-- Error -->
+            <div id="analytics-error" class="analytics-error" hidden></div>
+            <!-- Overview cards -->
+            <div class="analytics-card-grid">
+              <div class="analytics-card">
+                <div class="analytics-card-label">Total Users</div>
+                <div id="analytics-total-users" class="analytics-card-value">
+                  —
+                </div>
+              </div>
+              <div class="analytics-card">
+                <div class="analytics-card-label">Active Users</div>
+                <div id="analytics-active-users" class="analytics-card-value">
+                  —
+                </div>
+              </div>
+              <div class="analytics-card">
+                <div class="analytics-card-label">Total Chats</div>
+                <div id="analytics-total-chats" class="analytics-card-value">
+                  —
+                </div>
+              </div>
+              <div class="analytics-card">
+                <div class="analytics-card-label">Total Messages</div>
+                <div id="analytics-total-messages" class="analytics-card-value">
+                  —
+                </div>
+              </div>
+              <div class="analytics-card">
+                <div class="analytics-card-label">Total Sessions</div>
+                <div id="analytics-total-sessions" class="analytics-card-value">
+                  —
+                </div>
+              </div>
+              <div class="analytics-card">
+                <div class="analytics-card-label">Avg. Messages / Chat</div>
+                <div
+                  id="analytics-average-messages"
+                  class="analytics-card-value"
+                >
+                  —
+                </div>
+              </div>
+            </div>
+            <!-- Data panels -->
+            <div class="analytics-grid">
+              <!-- Chat activity -->
+              <div class="analytics-panel analytics-panel-full">
+                <div class="analytics-panel-header">
+                  <h3>Chat Activity</h3>
+                </div>
+                <div class="analytics-table-wrapper">
+                  <table class="analytics-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Chats</th>
+                        <th>Users</th>
+                        <th>Sessions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="analytics-chat-activity-body">
+                      <tr>
+                        <td colspan="4">Loading...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <!-- Top users -->
+              <div class="analytics-panel">
+                <div class="analytics-panel-header">
+                  <h3>Top Users</h3>
+                </div>
+                <div class="analytics-table-wrapper">
+                  <table class="analytics-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>User</th>
+                        <th>Chats</th>
+                        <th>Messages</th>
+                      </tr>
+                    </thead>
+                    <tbody id="analytics-top-users-body">
+                      <tr>
+                        <td colspan="4">Loading...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <!-- Hourly activity -->
+              <div class="analytics-panel">
+                <div class="analytics-panel-header">
+                  <h3>Hourly Activity</h3>
+                </div>
+                <div class="analytics-table-wrapper">
+                  <table class="analytics-table">
+                    <thead>
+                      <tr>
+                        <th>Hour</th>
+                        <th>Chats</th>
+                      </tr>
+                    </thead>
+                    <tbody id="analytics-hourly-body">
+                      <tr>
+                        <td colspan="2">Loading...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
         <!-- Settings -->
         <section id="settings-panel" class="content-panel hidden">

@@ -12,7 +12,7 @@ let currentSection = "dashboard";
  * @param {string} section - The section identifier (e.g. "users", "analytics")
  */
 export function setCurrentSection(section) {
-  console.log("admin_state.js loaded");
+  console.log("ADMIN STATE: current section =", section);
   currentSection = section;
 }
 
