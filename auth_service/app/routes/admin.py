@@ -7,8 +7,10 @@ from app.schemas.chat import ChatCreate, ChatResponse
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, String
-from datetime import date
+from datetime import date, datetime
 from sqlalchemy.exc import IntegrityError
+
+from app.routes.admin_analytics import ANALYTICS_TIMEZONE
 
 
 router = APIRouter()
@@ -25,7 +27,7 @@ def admin_dashboard(admin=Depends(require_admin), db: Session = Depends(get_db))
 
     today_chats = (
         db.query(ChatHistory)
-        .filter(func.date(ChatHistory.timestamp) == date.today())
+        .filter(func.date(ChatHistory.timestamp) == datetime.now(ANALYTICS_TIMEZONE).date())
         .count()
     )
 

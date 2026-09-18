@@ -1,4 +1,5 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, time
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, distinct
@@ -11,6 +12,9 @@ from app.models.user import User
 
 router = APIRouter()
 
+ANALYTICS_TIMEZONE = ZoneInfo("Asia/Kolkata")
+ANALYTICS_TIMEZONE_NAME = "Asia/Kolkata"
+
 
 # ============================================================
 # HELPERS
@@ -21,11 +25,11 @@ def _date_range(
     end_date: date | None,
 ):
     """
-    Return inclusive datetime boundaries.
-
-    If no dates are supplied, use the last 30 days including today.
+    Return date range and timezone-aware datetime boundaries
+    in the application's analytics timezone.
     """
-    today = date.today()
+
+    today = datetime.now(ANALYTICS_TIMEZONE).date()
 
     if end_date is None:
         end_date = today
@@ -33,13 +37,24 @@ def _date_range(
     if start_date is None:
         start_date = end_date - timedelta(days=29)
 
-    start_datetime = datetime.combine(start_date, datetime.min.time())
-    end_datetime = datetime.combine(
-        end_date + timedelta(days=1),
-        datetime.min.time(),
+    start_datetime = datetime.combine(
+        start_date,
+        time.min,
+        tzinfo=ANALYTICS_TIMEZONE,
     )
 
-    return start_date, end_date, start_datetime, end_datetime
+    end_datetime = datetime.combine(
+        end_date + timedelta(days=1),
+        time.min,
+        tzinfo=ANALYTICS_TIMEZONE,
+    )
+
+    return (
+        start_date,
+        end_date,
+        start_datetime,
+        end_datetime,
+    )
 
 
 # ============================================================
@@ -144,9 +159,12 @@ def analytics_overview(
     # Chats today
     # --------------------------------------------------------
 
+    today = datetime.now(ANALYTICS_TIMEZONE).date()
+
     today_start = datetime.combine(
-        date.today(),
-        datetime.min.time(),
+        today,
+        time.min,
+        tzinfo=ANALYTICS_TIMEZONE,
     )
 
     tomorrow_start = today_start + timedelta(days=1)
@@ -177,6 +195,13 @@ def analytics_overview(
 # DAILY CHAT ACTIVITY
 # ============================================================
 
+local_chat_date = func.date(
+    func.timezone(
+        ANALYTICS_TIMEZONE_NAME,
+        ChatHistory.timestamp,
+    )
+)
+
 @router.get("/chat-activity")
 def analytics_chat_activity(
     start_date: date | None = Query(None),
@@ -191,7 +216,7 @@ def analytics_chat_activity(
 
     rows = (
         db.query(
-            func.date(ChatHistory.timestamp).label("date"),
+            local_chat_date.label("date"),
             func.count(ChatHistory.id).label("chats"),
             func.count(
                 distinct(ChatHistory.user_id)
@@ -204,12 +229,8 @@ def analytics_chat_activity(
             ChatHistory.timestamp >= start_datetime,
             ChatHistory.timestamp < end_datetime,
         )
-        .group_by(
-            func.date(ChatHistory.timestamp)
-        )
-        .order_by(
-            func.date(ChatHistory.timestamp)
-        )
+        .group_by(local_chat_date)
+        .order_by(local_chat_date)
         .all()
     )
 
@@ -254,6 +275,13 @@ def analytics_chat_activity(
 # MESSAGE ACTIVITY
 # ============================================================
 
+local_message_date = func.date(
+    func.timezone(
+        ANALYTICS_TIMEZONE_NAME,
+        ChatHistory.timestamp,
+    )
+)
+
 @router.get("/message-activity")
 def analytics_message_activity(
     start_date: date | None = Query(None),
@@ -268,7 +296,7 @@ def analytics_message_activity(
 
     rows = (
         db.query(
-            func.date(ChatHistory.timestamp).label("date"),
+            local_message_date.label("date"),
             func.count(ChatMessage.id).label("messages"),
         )
         .join(
@@ -279,12 +307,8 @@ def analytics_message_activity(
             ChatHistory.timestamp >= start_datetime,
             ChatHistory.timestamp < end_datetime,
         )
-        .group_by(
-            func.date(ChatHistory.timestamp)
-        )
-        .order_by(
-            func.date(ChatHistory.timestamp)
-        )
+        .group_by(local_message_date)
+        .order_by(local_message_date)
         .all()
     )
 
@@ -459,6 +483,11 @@ def analytics_chat_statistics(
 # HOURLY ACTIVITY
 # ============================================================
 
+local_timestamp = func.timezone(
+    ANALYTICS_TIMEZONE_NAME,
+    ChatHistory.timestamp,
+)
+
 @router.get("/hourly-activity")
 def analytics_hourly_activity(
     start_date: date | None = Query(None),
@@ -475,7 +504,7 @@ def analytics_hourly_activity(
         db.query(
             func.extract(
                 "hour",
-                ChatHistory.timestamp,
+                local_timestamp,
             ).label("hour"),
             func.count(ChatHistory.id).label("chats"),
         )
@@ -486,13 +515,13 @@ def analytics_hourly_activity(
         .group_by(
             func.extract(
                 "hour",
-                ChatHistory.timestamp,
+                local_timestamp,
             )
         )
         .order_by(
             func.extract(
                 "hour",
-                ChatHistory.timestamp,
+                local_timestamp,
             )
         )
         .all()
