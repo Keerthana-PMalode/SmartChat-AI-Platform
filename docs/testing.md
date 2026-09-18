@@ -1,46 +1,27 @@
 # Testing Guide
 
 ## 1. Environment Verification
-
 ## 2. Authentication Testing
-
 ## 3. JWT Authorization Testing
-
 ## 4. Chat History Isolation Testing
-
 ## 5. File Upload Testing
-
 ## 6. File Download Testing
-
 ## 7. File Sharing Testing
-
 ## 8. File Permission Testing
-
 ## 9. Audit Log Testing
-
 ## 10. Encryption Testing
-
 ## 11. IP Address Logging Testing
-
 ## 12. Nginx Routing Testing
-
 ## 13. Database Verification
-
 ## 14. Docker Service Testing
-
 ## 15. Security Testing
-
 ## 16. Session-Aware Chat Testing
-
 ## 17. Administrative Chat History Testing
-
 ## 18. Administrative Users UI Testing
-
 ## 19. Admin Frontend Navigation and Session Cleanup Testing
+## 20. Administrative Analytics Testing
+## 21. Updated Verification Summary
 
-## 20. Updated Verification Summary
-
----
 
 ## 4. Chat History Isolation Testing
 
@@ -1689,7 +1670,127 @@ Initiate logout and cancel the confirmation. Verify that the user remains in the
 
 ---
 
-## 20. Updated Verification Summary
+## 20. Administrative Analytics Testing
+
+### 20.1 Analytics Authorization
+
+Call each `/admin/analytics/*` endpoint with a valid administrator JWT and
+verify that the request succeeds.
+
+Repeat with a valid ordinary-user JWT and verify that the request is rejected
+with:
+
+```text
+403 Forbidden
+```
+
+### 20.2 Analytics Default Date Range
+
+Call:
+
+```http
+GET /admin/analytics/overview
+Authorization: Bearer <ADMIN_JWT>
+```
+
+without date parameters.
+
+Verify that:
+
+- `end_date` is the current date in `Asia/Kolkata`;
+- `start_date` is 29 days before `end_date`;
+- the response contains the documented aggregate fields.
+
+### 20.3 Analytics Custom Date Range
+
+Call an analytics endpoint with:
+
+```http
+GET /admin/analytics/overview?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that the returned `start_date` and `end_date` match the request and that
+the metrics are restricted to the selected range.
+
+### 20.4 Daily Activity Completeness
+
+Test:
+
+```http
+GET /admin/analytics/chat-activity
+Authorization: Bearer <ADMIN_JWT>
+```
+
+and:
+
+```http
+GET /admin/analytics/message-activity
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that every date in the selected range is represented, including dates
+with zero activity.
+
+### 20.5 Top Users
+
+Call:
+
+```http
+GET /admin/analytics/top-users?limit=10
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that returned users are ordered by chat count descending and that the
+response contains `user_id`, `username`, `chats`, and `messages`.
+
+Also verify the documented `limit` boundaries:
+
+- `limit=1` is accepted.
+- `limit=100` is accepted.
+- `limit=0` is rejected.
+- `limit=101` is rejected.
+
+### 20.6 Chat Statistics
+
+Call:
+
+```http
+GET /admin/analytics/chat-statistics
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that the response contains total chats, total messages, total
+sessions, average chats per session, and average messages per chat.
+
+### 20.7 Hourly Activity
+
+Call:
+
+```http
+GET /admin/analytics/hourly-activity
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that exactly 24 hourly entries are returned with `hour` values from
+`0` through `23`, including zero counts for hours without activity.
+
+### 20.8 Analytics UI
+
+In the Admin UI:
+
+1. Open **Analytics**.
+2. Verify the analytics data loads.
+3. Change the date preset or date inputs and apply the filter.
+4. Verify that the displayed data updates for the selected range.
+5. Use Refresh and verify that the data is reloaded.
+6. Use Export and verify that a CSV file is generated.
+7. Verify that analytics loading/error states do not prevent the rest of the
+   Admin navigation from functioning.
+
+---
+
+## 21. Updated Verification Summary
 
 The recent Git changes introduce the following verification targets in addition to the existing authentication, chat-isolation, file, sharing, audit, encryption, routing, database, and Docker tests:
 

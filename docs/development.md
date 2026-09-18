@@ -1309,6 +1309,80 @@ session.
 
 ---
 
+## Administrative Analytics Development
+
+The Admin application includes an analytics section backed by
+`auth_service/app/routes/admin_analytics.py`. The router is mounted by the
+Auth Service at:
+
+```text
+/auth/admin/analytics
+```
+
+All analytics endpoints require administrator authorization.
+
+### Analytics Date Range
+
+The backend uses `Asia/Kolkata` as the analytics timezone. The optional
+`start_date` and `end_date` parameters use `YYYY-MM-DD` values.
+
+When no end date is supplied, the current date in `Asia/Kolkata` is used.
+When no start date is supplied, the default range starts 29 days before the
+selected end date.
+
+The range is converted into timezone-aware start/end datetime boundaries
+before database filtering.
+
+### Analytics Endpoints
+
+The analytics router provides:
+
+```text
+GET /admin/analytics/overview
+GET /admin/analytics/chat-activity
+GET /admin/analytics/message-activity
+GET /admin/analytics/top-users
+GET /admin/analytics/chat-statistics
+GET /admin/analytics/hourly-activity
+```
+
+`top-users` accepts `limit`, constrained to 1–100 and defaulting to 10.
+
+### Analytics Frontend
+
+The Admin analytics implementation is split across:
+
+```text
+frontend/js/analytics.js
+frontend/js/analytics.controller.js
+frontend/js/analytics.events.js
+frontend/js/analytics.service.js
+frontend/css/analytics.css
+```
+
+`analytics.service.js` maintains the selected date range and requests the six
+datasets in parallel. `analytics.controller.js` handles initialization,
+date presets, filtering, refresh, export, and rendering. EventBus events
+coordinate loading, loaded, error, refresh, and export states.
+
+The analytics export is generated client-side as CSV from the fetched
+overview, daily chat activity, and top-user data.
+
+### Analytics Development Verification
+
+For local development:
+
+1. Sign in with an administrator account.
+2. Open the Admin **Analytics** section.
+3. Verify the default date range is populated.
+4. Confirm the analytics requests are sent through `/auth/admin/analytics`.
+5. Apply a custom date range and verify that the same range is used by the
+   analytics requests.
+6. Refresh the analytics section and verify that fresh requests are issued.
+7. Export the analytics and verify that a CSV file is generated.
+
+---
+
 ## Pending Development and Hardening Items
 
 The following items have been identified during development and testing and

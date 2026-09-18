@@ -81,9 +81,6 @@ def analytics_overview(
 
     # --------------------------------------------------------
     # New users during selected period
-    #
-    # Your current User model may not have created_at.
-    # Therefore this intentionally does not assume one exists.
     # --------------------------------------------------------
 
     total_chats = (

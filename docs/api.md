@@ -173,6 +173,142 @@ Deletes chat-history records associated with the specified session. Associated m
 
 ---
 
+## Administrative Analytics API
+
+All `/admin/analytics/*` endpoints require administrator authorization through
+`require_admin`.
+
+The analytics endpoints accept these optional query parameters:
+
+```text
+start_date=YYYY-MM-DD
+end_date=YYYY-MM-DD
+```
+
+If `end_date` is omitted, the backend uses the current date in the
+`Asia/Kolkata` timezone. If `start_date` is omitted, it defaults to 29 days
+before the selected end date. The resulting range is inclusive of both
+dates.
+
+### GET /admin/analytics/overview
+
+Returns the selected date range and aggregate user/chat/session/message
+metrics.
+
+```json
+{
+  "start_date": "YYYY-MM-DD",
+  "end_date": "YYYY-MM-DD",
+  "total_users": 0,
+  "active_users": 0,
+  "total_chats": 0,
+  "total_sessions": 0,
+  "total_messages": 0,
+  "average_messages_per_chat": 0,
+  "today_chats": 0
+}
+```
+
+`total_users` is the current total user count; the other range-based
+conversation metrics are calculated from the selected period. `today_chats`
+is calculated for the current date in the analytics timezone.
+
+### GET /admin/analytics/chat-activity
+
+Returns one entry for each date in the selected range, including dates with
+zero activity.
+
+```json
+[
+  {
+    "date": "YYYY-MM-DD",
+    "chats": 0,
+    "users": 0,
+    "sessions": 0
+  }
+]
+```
+
+### GET /admin/analytics/message-activity
+
+Returns daily message counts for the selected range, including zero-activity
+dates.
+
+```json
+[
+  {
+    "date": "YYYY-MM-DD",
+    "messages": 0
+  }
+]
+```
+
+### GET /admin/analytics/top-users
+
+Returns users with chat activity during the selected range, ordered by
+conversation count descending.
+
+Optional parameter:
+
+```text
+limit=10
+```
+
+`limit` must be between 1 and 100 and defaults to 10.
+
+```json
+[
+  {
+    "user_id": 1,
+    "username": "username",
+    "chats": 0,
+    "messages": 0
+  }
+]
+```
+
+### GET /admin/analytics/chat-statistics
+
+Returns aggregate conversation statistics for the selected range.
+
+```json
+{
+  "total_chats": 0,
+  "total_messages": 0,
+  "total_sessions": 0,
+  "average_chats_per_session": 0,
+  "average_messages_per_chat": 0
+}
+```
+
+### GET /admin/analytics/hourly-activity
+
+Returns chat counts grouped by hour in the analytics timezone. The response
+always contains all 24 hours, using zero for hours with no activity.
+
+```json
+[
+  {
+    "hour": 0,
+    "chats": 0
+  }
+]
+```
+
+The returned `hour` values range from `0` through `23`.
+
+### Analytics Frontend Behavior
+
+The Admin analytics service stores the selected date range in memory and
+passes it to analytics requests. The analytics section fetches all six
+datasets in parallel.
+
+Analytics export generates a CSV file containing overview metrics, daily chat
+activity, and top-user results. The export is generated in the browser and
+does not introduce a separate backend export endpoint.
+
+---
+
 ## Delete User
 
 ### DELETE /users/{user_id}

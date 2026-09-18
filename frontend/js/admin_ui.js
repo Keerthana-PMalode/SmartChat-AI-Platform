@@ -31,24 +31,6 @@ function formatTitle(section) {
 }
 
 /**
- * Display the requested application section
- * and update the active sidebar navigation item.
- */
-function showSection(section) {
-  panels.forEach((panel) => {
-    panel.classList.toggle("hidden", panel.id !== `${section}-panel`);
-  });
-
-  navItems.forEach((item) => {
-    item.classList.toggle("active", item.dataset.section === section);
-  });
-
-  if (pageTitle) {
-    pageTitle.textContent = formatTitle(section);
-  }
-}
-
-/**
  * Escape HTML-sensitive characters before
  * inserting dynamic values into HTML.
  */

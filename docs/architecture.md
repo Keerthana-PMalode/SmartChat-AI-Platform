@@ -833,7 +833,54 @@ The Users section now supports client-side search, deterministic ID sorting, ten
 
 Navigation state is synchronized with the URL hash. On initialization the UI restores the section represented by the hash, and navigation changes are propagated through EventBus events.
 
-## 18. Architectural Principles
+## 18. Administrative Analytics Architecture
+
+The Admin UI now includes an analytics section backed by a dedicated FastAPI
+router mounted at `/admin/analytics`. The analytics router uses PostgreSQL
+aggregations over users, chat history, and chat messages and requires
+administrator authorization.
+
+```text
+Admin Browser
+    │
+    │ /admin/analytics/*
+    ▼
+Auth Service
+    │
+    ├──► /overview
+    ├──► /chat-activity
+    ├──► /message-activity
+    ├──► /top-users
+    ├──► /chat-statistics
+    └──► /hourly-activity
+            │
+            └──► PostgreSQL
+                 ├── users
+                 ├── chat_history
+                 └── chat_messages
+```
+
+Analytics endpoints accept optional `start_date` and `end_date` query
+parameters. When omitted, the backend uses the current date in the
+`Asia/Kolkata` analytics timezone and defaults the start date to 29 days before
+the end date. The selected range is applied using timezone-aware datetime
+boundaries.
+
+The analytics frontend is separated into:
+
+- `analytics.service.js` — maintains the selected date range, fetches all
+  analytics datasets, refreshes data, and exports analytics as CSV.
+- `analytics.controller.js` — initializes the analytics section, handles date
+  presets and controls, and renders returned datasets.
+- `analytics.events.js` — coordinates analytics UI events through EventBus.
+- `analytics.js` — exposes analytics-section initialization.
+- `analytics.css` — styles the analytics section.
+
+The analytics service requests the overview, daily chat activity, daily message
+activity, top users, chat statistics, and hourly activity datasets in parallel.
+The Admin UI provides date-range filtering, refresh, and CSV export controls.
+
+## 19. Architectural Principles
 
 SmartChat follows these architectural principles:
 
