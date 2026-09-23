@@ -1070,6 +1070,13 @@ The current documentation therefore does not define a fixed page size.
 The pagination behavior should be explicitly tested before documenting the
 number of users displayed on each page.
 
+### Admin Navigation State
+
+The Admin state module maintains an explicit allow-list of valid sections:
+`dashboard`, `users`, `chat-history`, and `analytics`. `setCurrentSection()`
+returns `false` and leaves the current section unchanged when an invalid section
+is supplied.
+
 ### Admin Navigation and Session Cleanup
 
 The Admin controller restores the initial section from `window.location.hash`
@@ -1306,6 +1313,63 @@ session.
 5. Log out and authenticate again.
 6. Confirm that the new login receives a different session_id.
 7. Save another message and verify that it is associated with the new session.
+
+---
+
+## Administrative Dashboard Development
+
+The Admin Dashboard is now a data-backed section rather than a static
+placeholder. The existing `GET /admin/dashboard` endpoint returns the data
+required by the dashboard UI.
+
+### Dashboard API Response
+
+The response includes:
+
+- `stats.users` — total users.
+- `stats.conversations` — total `chat_history` records.
+- `stats.messages` — total `chat_messages` records.
+- `stats.active_users` — distinct users with at least one conversation.
+- `recent_users` — up to five users ordered by descending user ID.
+- `recent_conversations` — up to five conversations ordered by descending
+  conversation timestamp.
+- `activity` — seven calendar days of conversation and message counts.
+
+The dashboard activity calculation uses the `Asia/Kolkata` analytics timezone.
+Conversation counts are based on `ChatHistory.timestamp`; message counts are
+calculated by joining `ChatMessage` to `ChatHistory` through `chat_id` and using
+the same conversation timestamp window.
+
+### Dashboard Frontend
+
+The dashboard is implemented through:
+
+- `dashboard.js`
+- `dashboard.service.js`
+- `dashboard.charts.js`
+- `dashboard.css`
+- Chart.js is loaded in `frontend/admin.html` from the jsDelivr CDN for dashboard chart rendering.
+- dashboard rendering in `admin_ui.js`
+
+`admin.js` initializes the dashboard section and calls `fetchDashboard()` when
+Dashboard navigation is selected. Dashboard state is communicated through
+`dashboard:loading`, `dashboard:loaded`, and `dashboard:error` events.
+
+The dashboard displays four summary cards, activity charts, recent users, and
+recent conversations. Usernames and roles rendered into dashboard HTML are
+escaped before insertion.
+
+### Dashboard Development Verification
+
+For local development:
+
+1. Sign in with an administrator account.
+2. Open the Admin **Dashboard** section.
+3. Verify the four summary values are populated.
+4. Verify the activity charts display the last seven days.
+5. Verify recent users and recent conversations are displayed.
+6. Confirm a failed dashboard request produces the documented error state
+   rather than leaving stale loading values.
 
 ---
 

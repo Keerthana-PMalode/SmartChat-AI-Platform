@@ -833,7 +833,49 @@ The Users section now supports client-side search, deterministic ID sorting, ten
 
 Navigation state is synchronized with the URL hash. On initialization the UI restores the section represented by the hash, and navigation changes are propagated through EventBus events.
 
-## 18. Administrative Analytics Architecture
+## 18. Administrative Dashboard Architecture
+
+The Admin Dashboard now provides a data-backed overview rather than a static
+welcome panel. The dashboard is served by the existing `/admin/dashboard`
+endpoint and combines aggregate statistics, recent records, and seven days of
+activity into a single response.
+
+```text
+Admin Browser
+    │
+    │ GET /admin/dashboard
+    ▼
+Admin API
+    │
+    ├──► users
+    ├──► chat_history
+    └──► chat_messages
+             │
+             ▼
+       Dashboard Response
+       ├── stats
+       ├── recent_users
+       ├── recent_conversations
+       └── activity
+```
+
+The dashboard reports total users, conversations, and messages. `active_users`
+is the number of distinct users with at least one conversation. It also returns
+at most five recent users and five recent conversations. The activity dataset
+covers the last seven calendar days and contains separate conversation and
+message counts for each day.
+
+The frontend dashboard is separated into:
+
+- `dashboard.js` — initializes the dashboard section.
+- `dashboard.service.js` — requests dashboard data.
+- `dashboard.charts.js` — renders dashboard charts using the Chart.js browser library.
+- `admin_ui.js` — renders dashboard statistics and recent-record content.
+- `dashboard.css` — styles the dashboard.
+
+The dashboard is loaded when the Dashboard section is selected.
+
+## 19. Administrative Analytics Architecture
 
 The Admin UI now includes an analytics section backed by a dedicated FastAPI
 router mounted at `/admin/analytics`. The analytics router uses PostgreSQL
@@ -878,9 +920,28 @@ The analytics frontend is separated into:
 
 The analytics service requests the overview, daily chat activity, daily message
 activity, top users, chat statistics, and hourly activity datasets in parallel.
-The Admin UI provides date-range filtering, refresh, and CSV export controls.
+Analytics loading is event-driven: selecting the Analytics section emits
+`analytics:load-requested`, which triggers the analytics service to fetch the
+current dataset. The analytics event module does not perform an unconditional
+initial fetch. The Admin UI provides date-range filtering, refresh, and CSV
+export controls.
 
-## 19. Architectural Principles
+The daily chat-activity dataset contains `chats`, `users`, and `messages`; the
+previous `sessions` field is no longer returned by this endpoint.
+
+## 20. Administrative Navigation State
+
+The Admin state module maintains the current section and validates navigation
+against the explicit allowed section set:
+
+- `dashboard`
+- `users`
+- `chat-history`
+- `analytics`
+
+An invalid section is rejected rather than becoming the current section.
+
+## 21. Architectural Principles
 
 SmartChat follows these architectural principles:
 

@@ -19,8 +19,9 @@
 ## 17. Administrative Chat History Testing
 ## 18. Administrative Users UI Testing
 ## 19. Admin Frontend Navigation and Session Cleanup Testing
-## 20. Administrative Analytics Testing
-## 21. Updated Verification Summary
+## 20. Administrative Dashboard Testing
+## 21. Administrative Analytics Testing
+## 22. Updated Verification Summary
 
 
 ## 4. Chat History Isolation Testing
@@ -1670,9 +1671,69 @@ Initiate logout and cancel the confirmation. Verify that the user remains in the
 
 ---
 
-## 20. Administrative Analytics Testing
+## 20. Administrative Dashboard Testing
 
-### 20.1 Analytics Authorization
+### 20.1 Dashboard Authorization
+
+Call:
+
+```http
+GET /admin/dashboard
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that an administrator receives a successful response. Repeat with a
+valid ordinary-user JWT and verify that the request is rejected with:
+
+```text
+403 Forbidden
+```
+
+### 20.2 Dashboard Summary Metrics
+
+Verify that the response contains:
+
+- `stats.users`;
+- `stats.conversations`;
+- `stats.messages`;
+- `stats.active_users`.
+
+Confirm that `active_users` represents distinct users having at least one
+conversation, rather than a rolling activity window.
+
+### 20.3 Recent Dashboard Data
+
+Verify that:
+
+- `recent_users` contains no more than five records and is ordered by
+  descending user ID;
+- `recent_conversations` contains no more than five records and is ordered by
+  descending conversation timestamp;
+- recent conversation records contain the user and session identifiers exposed
+  by the dashboard endpoint.
+
+### 20.4 Dashboard Seven-Day Activity
+
+Verify that the `activity` response contains seven labels and matching
+`conversations` and `messages` arrays. Confirm that zero-activity days are
+represented with zero values.
+
+### 20.5 Dashboard UI
+
+In the Admin UI:
+
+1. Open **Dashboard**.
+2. Verify that the four summary cards are populated.
+3. Verify that both activity charts render.
+4. Verify that recent users and recent conversations render.
+5. Trigger or simulate a failed dashboard request and verify that the error
+   state is shown without leaving the cards in the loading state.
+
+---
+
+## 21. Administrative Analytics Testing
+
+### 21.1 Analytics Authorization
 
 Call each `/admin/analytics/*` endpoint with a valid administrator JWT and
 verify that the request succeeds.
@@ -1684,7 +1745,7 @@ with:
 403 Forbidden
 ```
 
-### 20.2 Analytics Default Date Range
+### 21.2 Analytics Default Date Range
 
 Call:
 
@@ -1701,7 +1762,7 @@ Verify that:
 - `start_date` is 29 days before `end_date`;
 - the response contains the documented aggregate fields.
 
-### 20.3 Analytics Custom Date Range
+### 21.3 Analytics Custom Date Range
 
 Call an analytics endpoint with:
 
@@ -1713,7 +1774,7 @@ Authorization: Bearer <ADMIN_JWT>
 Verify that the returned `start_date` and `end_date` match the request and that
 the metrics are restricted to the selected range.
 
-### 20.4 Daily Activity Completeness
+### 21.4 Daily Activity Completeness
 
 Test:
 
@@ -1730,9 +1791,10 @@ Authorization: Bearer <ADMIN_JWT>
 ```
 
 Verify that every date in the selected range is represented, including dates
-with zero activity.
+with zero activity, and that each record contains `chats`, `users`, and
+`messages` rather than `sessions`.
 
-### 20.5 Top Users
+### 21.5 Top Users
 
 Call:
 
@@ -1751,7 +1813,7 @@ Also verify the documented `limit` boundaries:
 - `limit=0` is rejected.
 - `limit=101` is rejected.
 
-### 20.6 Chat Statistics
+### 21.6 Chat Statistics
 
 Call:
 
@@ -1763,7 +1825,7 @@ Authorization: Bearer <ADMIN_JWT>
 Verify that the response contains total chats, total messages, total
 sessions, average chats per session, and average messages per chat.
 
-### 20.7 Hourly Activity
+### 21.7 Hourly Activity
 
 Call:
 
@@ -1775,12 +1837,13 @@ Authorization: Bearer <ADMIN_JWT>
 Verify that exactly 24 hourly entries are returned with `hour` values from
 `0` through `23`, including zero counts for hours without activity.
 
-### 20.8 Analytics UI
+### 21.8 Analytics UI
 
 In the Admin UI:
 
 1. Open **Analytics**.
-2. Verify the analytics data loads.
+2. Verify that selecting Analytics triggers the analytics load request and the
+   analytics data loads.
 3. Change the date preset or date inputs and apply the filter.
 4. Verify that the displayed data updates for the selected range.
 5. Use Refresh and verify that the data is reloaded.
@@ -1790,7 +1853,7 @@ In the Admin UI:
 
 ---
 
-## 21. Updated Verification Summary
+## 22. Updated Verification Summary
 
 The recent Git changes introduce the following verification targets in addition to the existing authentication, chat-isolation, file, sharing, audit, encryption, routing, database, and Docker tests:
 
@@ -1807,4 +1870,10 @@ The recent Git changes introduce the following verification targets in addition 
 | Users UI | Sorting, search, pagination, refresh |
 | Frontend security | HTML escaping for rendered data |
 | Navigation | Hash-based section restoration and navigation |
+| Navigation guard | Invalid Admin sections rejected by admin state |
+| Dashboard API | Summary, recent records, and seven-day activity response |
+| Dashboard UI | Summary cards, charts, recent users, and recent conversations |
+| Dashboard errors | Loading/error states handled without stale loading values |
+| Analytics API | Daily chat activity returns chats, users, and messages |
+| Analytics loading | Analytics load triggered when Analytics section is selected |
 | Logout | Authentication/session-related localStorage cleanup |

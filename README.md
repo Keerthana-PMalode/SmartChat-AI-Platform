@@ -348,6 +348,24 @@ Architecture.
 
 ---
 
+## Admin Users
+
+![Admin](docs/images/admin-users.png)
+
+---
+
+## Admin Chat History
+
+![Admin](docs/images/admin-chathistory.png)
+
+---
+
+## Admin Analytics
+
+![Admin](docs/images/admin-analytics.png)
+
+---
+
 ## File Manager
 
 ![Files](docs/images/file-management.png)

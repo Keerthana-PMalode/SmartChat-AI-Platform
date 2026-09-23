@@ -104,7 +104,46 @@ All `/admin/*` endpoints require administrator authorization through `require_ad
 
 ### GET /admin/dashboard
 
-Returns administrative dashboard statistics including users, chats, distinct active sessions, and chats created today.
+Returns the current administrator dashboard summary, including total users, total conversations, total messages, active users, the five most recently created users, the five most recent conversations, and seven days of activity data.
+
+The response has the following structure:
+
+```json
+{
+  "status": "success",
+  "admin": "admin_username",
+  "role": "admin",
+  "stats": {
+    "users": 0,
+    "conversations": 0,
+    "messages": 0,
+    "active_users": 0
+  },
+  "recent_users": [
+    {
+      "id": 1,
+      "username": "username",
+      "role": "user"
+    }
+  ],
+  "recent_conversations": [
+    {
+      "id": 1,
+      "user_id": 1,
+      "user": "username",
+      "date": "<timestamp>",
+      "session_id": "<UUID>"
+    }
+  ],
+  "activity": {
+    "labels": ["Sep 17", "Sep 18"],
+    "conversations": [0, 0],
+    "messages": [0, 0]
+  }
+}
+```
+
+`active_users` means distinct users with at least one `chat_history` record; it is not a rolling last-24-hours metric. `recent_users` contains at most five users ordered by descending user ID. `recent_conversations` contains at most five conversations ordered by descending conversation timestamp. The activity arrays always cover the last seven calendar days in the analytics timezone and use `Mon DD` labels. Conversation activity is counted from `chat_history.timestamp`; message activity counts `chat_messages` joined to those conversations by `chat_id`.
 
 ### GET /admin/users
 
@@ -224,7 +263,7 @@ zero activity.
     "date": "YYYY-MM-DD",
     "chats": 0,
     "users": 0,
-    "sessions": 0
+    "messages": 0
   }
 ]
 ```
@@ -301,7 +340,7 @@ The returned `hour` values range from `0` through `23`.
 
 The Admin analytics service stores the selected date range in memory and
 passes it to analytics requests. The analytics section fetches all six
-datasets in parallel.
+datasets in parallel when the Analytics section is selected. Analytics initialization is event-driven: navigation emits `analytics:load-requested`, which triggers the analytics service to load the current date range. The analytics event module no longer performs an unconditional initial fetch during initialization.
 
 Analytics export generates a CSV file containing overview metrics, daily chat
 activity, and top-user results. The export is generated in the browser and
