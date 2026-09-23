@@ -96,13 +96,11 @@ function bindEvents() {
 
 function setDefaultDateRange() {
   const end = new Date();
-
   const start = new Date();
 
   start.setDate(end.getDate() - 29);
 
   const startInput = $("#analytics-start-date");
-
   const endInput = $("#analytics-end-date");
 
   if (startInput) {
@@ -116,9 +114,7 @@ function setDefaultDateRange() {
 
 function toInputDate(date) {
   const year = date.getFullYear();
-
   const month = String(date.getMonth() + 1).padStart(2, "0");
-
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
@@ -126,7 +122,6 @@ function toInputDate(date) {
 
 function applyDateFilter() {
   const start = $("#analytics-start-date")?.value;
-
   const end = $("#analytics-end-date")?.value;
 
   if (!start || !end) {
@@ -135,7 +130,6 @@ function applyDateFilter() {
 
   if (start > end) {
     showError("Start date cannot be after end date.");
-
     return;
   }
 
@@ -165,7 +159,6 @@ function handleDatePreset(event) {
   }
 
   const startInput = $("#analytics-start-date");
-
   const endInput = $("#analytics-end-date");
 
   if (startInput) {
@@ -207,7 +200,6 @@ function showError(message) {
   }
 
   error.textContent = message;
-
   error.hidden = false;
 
   window.setTimeout(() => {
@@ -220,6 +212,10 @@ function showError(message) {
 ============================================================ */
 
 function renderOverview(overview) {
+  if (!overview) {
+    return;
+  }
+
   setText("#analytics-total-users", formatNumber(overview.total_users));
 
   setText("#analytics-active-users", formatNumber(overview.active_users));
@@ -255,7 +251,7 @@ function renderChatActivity(data) {
     return;
   }
 
-  if (!data.length) {
+  if (!Array.isArray(data) || !data.length) {
     body.innerHTML = `
       <tr>
         <td colspan="4">
@@ -270,21 +266,24 @@ function renderChatActivity(data) {
   body.innerHTML = data
     .map(
       (item) => `
-          <tr>
-            <td>
-              ${escapeHtml(formatDate(item.date))}
-            </td>
-            <td>
-              ${formatNumber(item.chats)}
-            </td>
-            <td>
-              ${formatNumber(item.users)}
-            </td>
-            <td>
-              ${formatNumber(item.sessions)}
-            </td>
-          </tr>
-        `,
+        <tr>
+          <td>
+            ${escapeHtml(formatDate(item.date))}
+          </td>
+
+          <td>
+            ${formatNumber(item.chats)}
+          </td>
+
+          <td>
+            ${formatNumber(item.users)}
+          </td>
+
+          <td>
+            ${formatNumber(item.messages)}
+          </td>
+        </tr>
+      `,
     )
     .join("");
 }
@@ -300,7 +299,7 @@ function renderTopUsers(users) {
     return;
   }
 
-  if (!users.length) {
+  if (!Array.isArray(users) || !users.length) {
     body.innerHTML = `
       <tr>
         <td colspan="4">
@@ -315,24 +314,24 @@ function renderTopUsers(users) {
   body.innerHTML = users
     .map(
       (user, index) => `
-          <tr>
-            <td>
-              ${index + 1}
-            </td>
+        <tr>
+          <td>
+            ${index + 1}
+          </td>
 
-            <td>
-              ${escapeHtml(user.username)}
-            </td>
+          <td>
+            ${escapeHtml(user.username)}
+          </td>
 
-            <td>
-              ${formatNumber(user.chats)}
-            </td>
+          <td>
+            ${formatNumber(user.chats)}
+          </td>
 
-            <td>
-              ${formatNumber(user.messages)}
-            </td>
-          </tr>
-        `,
+          <td>
+            ${formatNumber(user.messages)}
+          </td>
+        </tr>
+      `,
     )
     .join("");
 }
@@ -348,19 +347,24 @@ function renderHourlyActivity(data) {
     return;
   }
 
+  if (!Array.isArray(data)) {
+    body.innerHTML = "";
+    return;
+  }
+
   body.innerHTML = data
     .map(
       (item) => `
-          <tr>
-            <td>
-              ${String(item.hour).padStart(2, "0")}:00
-            </td>
+        <tr>
+          <td>
+            ${String(item.hour).padStart(2, "0")}:00
+          </td>
 
-            <td>
-              ${formatNumber(item.chats)}
-            </td>
-          </tr>
-        `,
+          <td>
+            ${formatNumber(item.chats)}
+          </td>
+        </tr>
+      `,
     )
     .join("");
 }
@@ -370,6 +374,10 @@ function renderHourlyActivity(data) {
 ============================================================ */
 
 function render(data) {
+  if (!data) {
+    return;
+  }
+
   state.data = data;
 
   renderOverview(data.overview);
@@ -386,6 +394,8 @@ function render(data) {
 ============================================================ */
 
 export function handleAnalyticsLoaded(data) {
+  console.log("ANALYTICS CONTROLLER: loaded", data);
+
   render(data);
 }
 

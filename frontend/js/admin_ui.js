@@ -1,4 +1,5 @@
 import { EventBus } from "./admin_events.js";
+import { renderDashboardCharts } from "./dashboard.charts.js";
 
 /* =========================================================
    GLOBAL UI REFERENCES
@@ -106,6 +107,28 @@ function normalizeMessageRole(role) {
 }
 
 /* =========================================================
+   DASHBOARD
+========================================================= */
+
+const dashboardTotalUsers = document.getElementById("dashboard-total-users");
+
+const dashboardTotalConversations = document.getElementById(
+  "dashboard-total-conversations",
+);
+
+const dashboardTotalMessages = document.getElementById(
+  "dashboard-total-messages",
+);
+
+const dashboardActiveUsers = document.getElementById("dashboard-active-users");
+
+const dashboardRecentUsers = document.getElementById("dashboard-recent-users");
+
+const dashboardRecentConversations = document.getElementById(
+  "dashboard-recent-conversations",
+);
+
+/* =========================================================
    SIDEBAR NAVIGATION
 ========================================================= */
 
@@ -162,6 +185,10 @@ EventBus.on("app:navigated", (event) => {
     element.hidden = true;
   });
 
+  document.querySelectorAll(".nav-item[data-section]").forEach((item) => {
+    item.classList.toggle("active", item.dataset.section === section);
+  });
+
   const target = document.getElementById(`${section}-section`);
 
   if (!target) {
@@ -172,7 +199,6 @@ EventBus.on("app:navigated", (event) => {
 
   target.hidden = false;
 
-  // Update the topbar title.
   updatePageTitle(section);
 });
 
@@ -1424,3 +1450,220 @@ EventBus.on("chat-messages:error", (event) => {
       `;
   }
 });
+
+/* =========================================================
+   DASHBOARD LOADING
+========================================================= */
+
+EventBus.on("dashboard:loading", (event) => {
+  const loading = event.detail?.loading;
+
+  if (!loading) {
+    return;
+  }
+
+  console.log("UI: dashboard loading");
+
+  if (dashboardTotalUsers) {
+    dashboardTotalUsers.textContent = "...";
+  }
+
+  if (dashboardTotalConversations) {
+    dashboardTotalConversations.textContent = "...";
+  }
+
+  if (dashboardTotalMessages) {
+    dashboardTotalMessages.textContent = "...";
+  }
+
+  if (dashboardActiveUsers) {
+    dashboardActiveUsers.textContent = "...";
+  }
+});
+
+/* =========================================================
+   DASHBOARD ERROR
+========================================================= */
+
+EventBus.on("dashboard:error", (event) => {
+  console.error("UI: dashboard error:", event.detail?.error);
+
+  if (dashboardTotalUsers) {
+    dashboardTotalUsers.textContent = "0";
+  }
+
+  if (dashboardTotalConversations) {
+    dashboardTotalConversations.textContent = "0";
+  }
+
+  if (dashboardTotalMessages) {
+    dashboardTotalMessages.textContent = "0";
+  }
+
+  if (dashboardActiveUsers) {
+    dashboardActiveUsers.textContent = "0";
+  }
+
+  if (dashboardRecentUsers) {
+    dashboardRecentUsers.innerHTML = "<p>Unable to load recent users.</p>";
+  }
+
+  if (dashboardRecentConversations) {
+    dashboardRecentConversations.innerHTML =
+      "<p>Unable to load recent conversations.</p>";
+  }
+});
+
+/* =========================================================
+   RENDER DASHBOARD
+========================================================= */
+
+EventBus.on("dashboard:loaded", (event) => {
+  const data = event.detail ?? {};
+
+  const stats = data.stats ?? {};
+
+  const recentUsers = data.recent_users ?? [];
+
+  const recentConversations = data.recent_conversations ?? [];
+
+  console.log("UI: dashboard loaded:", data);
+
+  /* -------------------------------------------------------
+     STATISTICS
+  ------------------------------------------------------- */
+
+  if (dashboardTotalUsers) {
+    dashboardTotalUsers.textContent = stats.users ?? 0;
+  }
+
+  if (dashboardTotalConversations) {
+    dashboardTotalConversations.textContent = stats.conversations ?? 0;
+  }
+
+  if (dashboardTotalMessages) {
+    dashboardTotalMessages.textContent = stats.messages ?? 0;
+  }
+
+  if (dashboardActiveUsers) {
+    dashboardActiveUsers.textContent = stats.active_users ?? 0;
+  }
+
+  /* -------------------------------------------------------
+     RECENT USERS
+  ------------------------------------------------------- */
+
+  if (dashboardRecentUsers) {
+    dashboardRecentUsers.innerHTML = "";
+
+    if (recentUsers.length === 0) {
+      dashboardRecentUsers.innerHTML = "<p>No recent users.</p>";
+    } else {
+      recentUsers.forEach((user) => {
+        const item = document.createElement("div");
+
+        item.className = "dashboard-recent-item";
+
+        item.innerHTML = `
+          <strong>${escapeHtml(user.username)}</strong>
+          <span>${escapeHtml(user.role)}</span>
+        `;
+
+        dashboardRecentUsers.appendChild(item);
+      });
+    }
+  }
+
+  /* -------------------------------------------------------
+     RECENT CONVERSATIONS
+  ------------------------------------------------------- */
+
+  if (dashboardRecentConversations) {
+    dashboardRecentConversations.innerHTML = "";
+
+    if (recentConversations.length === 0) {
+      dashboardRecentConversations.innerHTML =
+        "<p>No recent conversations.</p>";
+    } else {
+      recentConversations.forEach((chat) => {
+        const item = document.createElement("div");
+
+        item.className = "dashboard-recent-item";
+
+        item.innerHTML = `
+          <strong>${escapeHtml(chat.user)}</strong>
+
+          <span>
+            ${formatChatDate(chat.date)}
+          </span>
+        `;
+
+        dashboardRecentConversations.appendChild(item);
+      });
+    }
+  }
+});
+
+/* =========================================================
+   DASHBOARD TABLE HELPERS
+========================================================= */
+
+function renderDashboardUsers(users) {
+  return `
+    <div class="dashboard-table-wrapper">
+      <table class="dashboard-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Username</th>
+            <th>Role</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${users
+            .map(
+              (user) => `
+                <tr>
+                  <td>${escapeHtml(user.id)}</td>
+                  <td>${escapeHtml(user.username)}</td>
+                  <td>${escapeHtml(user.role)}</td>
+                </tr>
+              `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderDashboardConversations(chats) {
+  return `
+    <div class="dashboard-table-wrapper">
+      <table class="dashboard-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Messages</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${chats
+            .map(
+              (chat) => `
+                <tr>
+                  <td>${escapeHtml(chat.user)}</td>
+                  <td>${escapeHtml(chat.messages)}</td>
+                  <td>${formatChatDate(chat.date)}</td>
+                </tr>
+              `,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}

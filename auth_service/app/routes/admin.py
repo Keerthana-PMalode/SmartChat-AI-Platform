@@ -7,39 +7,176 @@ from app.schemas.chat import ChatCreate, ChatResponse
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, String
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, time
 from sqlalchemy.exc import IntegrityError
 
 from app.routes.admin_analytics import ANALYTICS_TIMEZONE
-
 
 router = APIRouter()
 
 
 @router.get("/dashboard")
-def admin_dashboard(admin=Depends(require_admin), db: Session = Depends(get_db)):
+def admin_dashboard(
+    admin=Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    # -------------------------------------------------------
+    # TOTAL COUNTS
+    # -------------------------------------------------------
 
     total_users = db.query(User).count()
 
-    total_chats = db.query(ChatHistory).count()
+    total_conversations = db.query(ChatHistory).count()
 
-    active_sessions = db.query(ChatHistory.session_id).distinct().count()
+    total_messages = db.query(ChatMessage).count()
 
-    today_chats = (
-        db.query(ChatHistory)
-        .filter(func.date(ChatHistory.timestamp) == datetime.now(ANALYTICS_TIMEZONE).date())
+    # -------------------------------------------------------
+    # ACTIVE USERS
+    # -------------------------------------------------------
+    #
+    # Here "active users" means users who have at least
+    # one conversation.
+    #
+    # If you later want "active in the last 24 hours",
+    # this calculation can be changed.
+    # -------------------------------------------------------
+
+    active_users = (
+        db.query(ChatHistory.user_id)
+        .distinct()
         .count()
     )
 
+    # -------------------------------------------------------
+    # RECENT USERS
+    # -------------------------------------------------------
+
+    recent_users = (
+        db.query(User)
+        .order_by(User.id.desc())
+        .limit(5)
+        .all()
+    )
+
+    # -------------------------------------------------------
+    # RECENT CONVERSATIONS
+    # -------------------------------------------------------
+
+    recent_chats = (
+        db.query(ChatHistory)
+        .join(
+            User,
+            ChatHistory.user_id == User.id,
+        )
+        .order_by(ChatHistory.timestamp.desc())
+        .limit(5)
+        .all()
+    )
+
+    # -------------------------------------------------------
+    # ACTIVITY - LAST 7 DAYS
+    # -------------------------------------------------------
+
+    today = datetime.now(
+        ANALYTICS_TIMEZONE
+    ).date()
+
+    activity_labels = []
+    activity_conversations = []
+    activity_messages = []
+
+    for days_ago in range(6, -1, -1):
+        activity_date = today - timedelta(days=days_ago)
+        next_date = activity_date + timedelta(days=1)
+
+        start_datetime = datetime.combine(
+            activity_date,
+            time.min,
+            tzinfo=ANALYTICS_TIMEZONE,
+        )
+
+        end_datetime = datetime.combine(
+            next_date,
+            time.min,
+            tzinfo=ANALYTICS_TIMEZONE,
+        )
+
+        conversation_count = (
+            db.query(ChatHistory)
+            .filter(
+                ChatHistory.timestamp >= start_datetime,
+                ChatHistory.timestamp < end_datetime,
+            )
+            .count()
+        )
+
+        message_count = (
+            db.query(ChatMessage)
+            .join(
+                ChatHistory,
+                ChatMessage.chat_id == ChatHistory.id,
+            )
+            .filter(
+                ChatHistory.timestamp >= start_datetime,
+                ChatHistory.timestamp < end_datetime,
+            )
+            .count()
+        )
+
+        activity_labels.append(
+            activity_date.strftime("%b %d")
+        )
+
+        activity_conversations.append(
+            conversation_count
+        )
+
+        activity_messages.append(
+            message_count
+        )
+
+    # -------------------------------------------------------
+    # RESPONSE
+    # -------------------------------------------------------
+
     return {
         "status": "success",
+
         "admin": admin.username,
+
         "role": admin.role,
+
         "stats": {
             "users": total_users,
-            "chats": total_chats,
-            "active_sessions": active_sessions,
-            "today_chats": today_chats,
+            "conversations": total_conversations,
+            "messages": total_messages,
+            "active_users": active_users,
+        },
+
+        "recent_users": [
+            {
+                "id": user.id,
+                "username": user.username,
+                "role": user.role,
+            }
+            for user in recent_users
+        ],
+
+        "recent_conversations": [
+            {
+                "id": chat.id,
+                "user_id": chat.user_id,
+                "user": chat.user.username,
+                "date": chat.timestamp,
+                "session_id": chat.session_id,
+            }
+            for chat in recent_chats
+        ],
+
+        "activity": {
+            "labels": activity_labels,
+            "conversations": activity_conversations,
+            "messages": activity_messages,
         },
     }
 
@@ -180,12 +317,9 @@ def get_all_chat_history(
     # Base query
     # ---------------------------------------
 
-    base_query = (
-        db.query(ChatHistory)
-        .join(
-            User,
-            ChatHistory.user_id == User.id,
-        )
+    base_query = db.query(ChatHistory).join(
+        User,
+        ChatHistory.user_id == User.id,
     )
 
     # ---------------------------------------
@@ -217,8 +351,7 @@ def get_all_chat_history(
     offset = (page - 1) * page_size
 
     chats = (
-        base_query
-        .order_by(ChatHistory.timestamp.desc())
+        base_query.order_by(ChatHistory.timestamp.desc())
         .offset(offset)
         .limit(page_size)
         .all()
@@ -238,17 +371,12 @@ def get_all_chat_history(
                 ChatMessage.chat_id,
                 func.count(ChatMessage.id).label("message_count"),
             )
-            .filter(
-                ChatMessage.chat_id.in_(chat_ids)
-            )
+            .filter(ChatMessage.chat_id.in_(chat_ids))
             .group_by(ChatMessage.chat_id)
             .all()
         )
 
-        message_counts = {
-            chat_id: count
-            for chat_id, count in counts
-        }
+        message_counts = {chat_id: count for chat_id, count in counts}
 
     # ---------------------------------------
     # Response

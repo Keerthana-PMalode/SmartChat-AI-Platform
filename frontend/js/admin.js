@@ -1,3 +1,7 @@
+import { fetchDashboard } from "./dashboard.service.js";
+
+import { initDashboardSection } from "./dashboard.js";
+
 import { initAnalyticsSection } from "./analytics.js";
 
 import { EventBus } from "./admin_events.js";
@@ -266,6 +270,16 @@ function handleNavigationRequest(section) {
   });
 
   /* -------------------------------------------------------
+     LOAD DASHBOARD SECTION
+  ------------------------------------------------------- */
+
+  if (section === "dashboard") {
+    console.log("DASHBOARD SECTION SELECTED");
+
+    fetchDashboard();
+  }
+
+  /* -------------------------------------------------------
      LOAD USERS SECTION
   ------------------------------------------------------- */
 
@@ -287,6 +301,8 @@ function handleNavigationRequest(section) {
 
   if (section === "analytics") {
     console.log("ANALYTICS SECTION SELECTED");
+
+    EventBus.emit("analytics:load-requested");
   }
 }
 
@@ -366,6 +382,8 @@ function initController() {
 
     return;
   }
+
+  initDashboardSection();
 
   initAnalyticsSection();
 

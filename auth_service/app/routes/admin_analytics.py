@@ -199,6 +199,7 @@ local_chat_date = func.date(
     )
 )
 
+
 @router.get("/chat-activity")
 def analytics_chat_activity(
     start_date: date | None = Query(None),
@@ -214,13 +215,25 @@ def analytics_chat_activity(
     rows = (
         db.query(
             local_chat_date.label("date"),
-            func.count(ChatHistory.id).label("chats"),
+
+            # Number of conversations/chats
+            func.count(
+                distinct(ChatHistory.id)
+            ).label("chats"),
+
+            # Number of unique users
             func.count(
                 distinct(ChatHistory.user_id)
             ).label("users"),
+
+            # Number of messages
             func.count(
-                distinct(ChatHistory.session_id)
-            ).label("sessions"),
+                ChatMessage.id
+            ).label("messages"),
+        )
+        .outerjoin(
+            ChatMessage,
+            ChatMessage.chat_id == ChatHistory.id,
         )
         .filter(
             ChatHistory.timestamp >= start_datetime,
@@ -235,7 +248,7 @@ def analytics_chat_activity(
         row.date: {
             "chats": row.chats,
             "users": row.users,
-            "sessions": row.sessions,
+            "messages": row.messages,
         }
         for row in rows
     }
@@ -250,7 +263,7 @@ def analytics_chat_activity(
             {
                 "chats": 0,
                 "users": 0,
-                "sessions": 0,
+                "messages": 0,
             },
         )
 
@@ -259,7 +272,7 @@ def analytics_chat_activity(
                 "date": current.isoformat(),
                 "chats": values["chats"],
                 "users": values["users"],
-                "sessions": values["sessions"],
+                "messages": values["messages"],
             }
         )
 

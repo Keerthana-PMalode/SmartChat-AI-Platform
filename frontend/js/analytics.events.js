@@ -16,6 +16,8 @@ export function initAnalyticsEvents() {
 
   initialized = true;
 
+  EventBus.on("analytics:load-requested", initAnalytics);
+
   EventBus.on("analytics:loaded", (event) => {
     console.log("ANALYTICS EVENT LOADED:", event.detail);
     handleAnalyticsLoaded(event.detail);
@@ -30,6 +32,4 @@ export function initAnalyticsEvents() {
     console.error("ANALYTICS EVENT ERROR:", event.detail);
     handleAnalyticsError(event.detail);
   });
-
-  initAnalytics();
 }

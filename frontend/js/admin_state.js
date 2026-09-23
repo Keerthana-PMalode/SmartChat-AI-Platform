@@ -1,38 +1,73 @@
-/* ==========================================================
-   Admin State Module - admin_state.js
-   Centralized application state for Admin Dashboard
-========================================================== */
-// admin_state.js
+// ==========================================================
+// Admin State Module - admin_state.js
+// Centralized application state for Admin Dashboard
+// ==========================================================
 
-// Track the current section of the admin dashboard
+/* =========================================================
+   CURRENT SECTION
+========================================================= */
+
 let currentSection = "dashboard";
 
-/**
- * Update the current section
- * @param {string} section - The section identifier (e.g. "users", "analytics")
- */
-export function setCurrentSection(section) {
-  console.log("ADMIN STATE: current section =", section);
-  currentSection = section;
-}
+/* =========================================================
+   ALLOWED SECTIONS
+========================================================= */
+
+const allowedSections = new Set([
+  "dashboard",
+  "users",
+  "chat-history",
+  "analytics",
+]);
+
+/* =========================================================
+   SET CURRENT SECTION
+========================================================= */
 
 /**
- * Retrieve the current section
- * @returns {string} - The current section identifier
+ * Update the current dashboard section.
+ *
+ * @param {string} section
+ * @returns {boolean}
+ */
+export function setCurrentSection(section) {
+  if (!canNavigateTo(section)) {
+    console.warn("ADMIN STATE: invalid section:", section);
+
+    return false;
+  }
+
+  currentSection = section;
+
+  console.log("ADMIN STATE: current section =", currentSection);
+
+  return true;
+}
+
+/* =========================================================
+   GET CURRENT SECTION
+========================================================= */
+
+/**
+ * Retrieve the current dashboard section.
+ *
+ * @returns {string}
  */
 export function getCurrentSection() {
   return currentSection;
 }
 
+/* =========================================================
+   NAVIGATION GUARD
+========================================================= */
+
 /**
- * Stubbed navigation guard
- * @param {string} section - The section to navigate to
- * @returns {boolean} - Whether navigation is allowed
+ * Determine whether a section is a valid
+ * admin dashboard section.
+ *
+ * @param {string} section
+ * @returns {boolean}
  */
 export function canNavigateTo(section) {
-  // For now, allow all sections
-  return true;
-
-  // Later you can add rules, e.g.:
-  // return section !== "settings" || userIsAdmin();
+  return allowedSections.has(section);
 }
