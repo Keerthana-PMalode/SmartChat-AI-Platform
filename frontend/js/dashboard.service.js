@@ -13,7 +13,7 @@ export async function fetchDashboard() {
   try {
     const response = await api.get("/admin/dashboard");
 
-    console.log("DASHBOARD SERVICE:", response);
+    console.log("DASHBOARD SERVICE: loaded", response);
 
     EventBus.emit("dashboard:loaded", response);
 
@@ -23,7 +23,7 @@ export async function fetchDashboard() {
 
     EventBus.emit("dashboard:error", {
       error,
-      message: error.message,
+      message: error?.message || "Failed to load dashboard.",
     });
 
     throw error;

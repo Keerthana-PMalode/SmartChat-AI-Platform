@@ -4,11 +4,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.database import Base, engine
 
 # Import models before create_all()
+from app.models.user import User
+from app.models.chat import ChatHistory, ChatMessage
+from app.models.system import SystemSetting, AuditLog
+
 from app.routes import chat
 from app.routes import admin_analytics
 from app.routes.admin import router as admin_router
 from app.routes.login import router as login_router
 from app.routes.token import router as token_router
+
+from app.routes.admin_system import router as admin_system_router
+
 
 app = FastAPI(title="Auth Service", version="1.0.0", root_path="/auth")
 
@@ -34,4 +41,9 @@ app.include_router(
     admin_analytics.router,
     prefix="/admin/analytics",
     tags=["Admin Analytics"],
+)
+app.include_router(
+    admin_system_router,
+    prefix="/admin",
+    tags=["Admin System"],
 )

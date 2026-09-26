@@ -15,6 +15,8 @@ let initialized = false;
 
 export function initDashboardEvents() {
   if (initialized) {
+    console.log("DASHBOARD EVENTS: already initialized");
+
     return;
   }
 

@@ -21,6 +21,13 @@ import {
 
 import "./admin_ui.js";
 
+import "./settings.controller.js";
+
+import {
+  exportAnalytics,
+} from "./analytics.service.js";
+
+
 /* =========================================================
    ADMIN AUTHORIZATION
 ========================================================= */
@@ -226,6 +233,16 @@ EventBus.on("chat-history:view-requested", async (event) => {
   await fetchChatMessages(userId, chatId);
 });
 
+
+EventBus.on("analytics:export-requested", async () => {
+  try {
+    await exportAnalytics();
+  } catch (error) {
+    console.error("ADMIN: analytics export failed:", error);
+  }
+});
+
+
 /* =========================================================
    APPLICATION NAVIGATION
 ========================================================= */
@@ -303,6 +320,24 @@ function handleNavigationRequest(section) {
     console.log("ANALYTICS SECTION SELECTED");
 
     EventBus.emit("analytics:load-requested");
+  }
+
+  /* -------------------------------------------------------
+     LOAD SETTINGS SECTION
+  ------------------------------------------------------- */
+
+  if (section === "settings") {
+    console.log("SETTINGS SECTION SELECTED");
+
+    EventBus.emit("settings:load-requested");
+  }
+
+  /* -------------------------------------------------------
+     LOAD LOGS SECTION
+  ------------------------------------------------------- */
+
+  if (section === "logs") {
+    console.log("LOGS SECTION SELECTED");
   }
 }
 

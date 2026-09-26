@@ -1,0 +1,108 @@
+/* ============================================================
+   ADMIN LOGS
+   ============================================================ */
+.logs-description {
+  margin-top: 5px;
+  color: var(--text-light);
+  font-size: 14px;
+}
+.logs-container {
+    width: 100%;
+}
+.logs-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+.logs-search {
+    flex: 1;
+    min-width: 240px;
+}
+.logs-search input,
+.logs-filter select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #fff;
+    color: #111827;
+}
+.logs-table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+}
+.logs-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.logs-table th,
+.logs-table td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+    white-space: nowrap;
+}
+.logs-table th {
+    background: #f9fafb;
+    font-weight: 600;
+    color: #374151;
+}
+.logs-table td {
+    color: #4b5563;
+}
+.log-level {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.log-level.info {
+    background: #dbeafe;
+    color: #1d4ed8;
+}
+.log-level.success {
+    background: #dcfce7;
+    color: #15803d;
+}
+.log-level.warning {
+    background: #fef3c7;
+    color: #b45309;
+}
+.log-level.error {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+.log-level.critical {
+    background: #7f1d1d;
+    color: #fff;
+}
+.log-message {
+    max-width: 500px;
+    white-space: normal;
+    word-break: break-word;
+}
+.logs-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 16px;
+    gap: 10px;
+}
+.logs-empty {
+    padding: 40px;
+    text-align: center;
+    color: #6b7280;
+}
+.logs-loading {
+    padding: 30px;
+    text-align: center;
+    color: #6b7280;
+}

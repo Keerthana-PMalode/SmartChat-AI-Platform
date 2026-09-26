@@ -1,22 +1,39 @@
 import { fetchDashboard } from "./dashboard.service.js";
+import {
+  renderDashboardCharts,
+  destroyDashboardCharts,
+} from "./dashboard.charts.js";
 
 /* =========================================================
    DASHBOARD STATE
 ========================================================= */
 
-let activityChart = null;
-let comparisonChart = null;
-
 let dashboardInitialized = false;
 let dashboardLoading = false;
 
 /* =========================================================
-   HELPERS
+   NORMALIZE ACTIVITY DATA
 ========================================================= */
 
-function getElement(id) {
-  return document.getElementById(id);
-}
+/*
+ * Dashboard API returns:
+ *
+ * {
+ *   labels: [...],
+ *   conversations: [...],
+ *   messages: [...]
+ * }
+ *
+ * Older implementations may return:
+ *
+ * [
+ *   {
+ *     date: "2026-09-17",
+ *     chats: 4,
+ *     messages: 12
+ *   }
+ * ]
+ */
 
 function formatDate(dateString) {
   if (!dateString) {
@@ -25,47 +42,17 @@ function formatDate(dateString) {
 
   const date = new Date(String(dateString) + "T00:00:00");
 
+  if (Number.isNaN(date.getTime())) {
+    return String(dateString);
+  }
+
   return date.toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
   });
 }
 
-/* =========================================================
-   CHART CLEANUP
-========================================================= */
-
-function destroyCharts() {
-  if (activityChart) {
-    activityChart.destroy();
-    activityChart = null;
-  }
-
-  if (comparisonChart) {
-    comparisonChart.destroy();
-    comparisonChart = null;
-  }
-}
-
-/* =========================================================
-   NORMALIZE ACTIVITY DATA
-========================================================= */
-
-/*
- * Dashboard API returns activity in this format:
- *
- * {
- *   labels: [...],
- *   conversations: [...],
- *   messages: [...]
- * }
- *
- * Older implementations expected an array of objects.
- * Normalize everything here so the chart functions receive
- * a consistent structure.
- */
-
-function normalizeActivityData(data) {
+export function normalizeActivityData(data) {
   if (!data) {
     return {
       labels: [],
@@ -74,15 +61,10 @@ function normalizeActivityData(data) {
     };
   }
 
-  /*
-   * Current API format:
-   *
-   * {
-   *   labels: [],
-   *   conversations: [],
-   *   messages: []
-   * }
-   */
+  /* -------------------------------------------------------
+     CURRENT API FORMAT
+  ------------------------------------------------------- */
+
   if (!Array.isArray(data) && typeof data === "object") {
     return {
       labels: Array.isArray(data.labels) ? data.labels : [],
@@ -97,17 +79,10 @@ function normalizeActivityData(data) {
     };
   }
 
-  /*
-   * Backward compatibility with the old array format:
-   *
-   * [
-   *   {
-   *     date: "2026-09-17",
-   *     chats: 4,
-   *     messages: 12
-   *   }
-   * ]
-   */
+  /* -------------------------------------------------------
+     LEGACY ARRAY FORMAT
+  ------------------------------------------------------- */
+
   if (Array.isArray(data)) {
     return {
       labels: data.map((item) => formatDate(item.date)),
@@ -128,215 +103,17 @@ function normalizeActivityData(data) {
 }
 
 /* =========================================================
-   ACTIVITY CHART
+   GET ACTIVITY DATA
 ========================================================= */
 
-function renderActivityChart(data) {
-  const canvas = getElement("dashboard-activity-chart");
-
-  if (!canvas) {
-    console.warn("Dashboard activity chart canvas not found.");
-
-    return;
-  }
-
-  if (typeof Chart === "undefined") {
-    console.error("Chart.js is not loaded.");
-
-    return;
-  }
-
-  const { labels, conversations, messages } = normalizeActivityData(data);
-
-  console.log("DASHBOARD ACTIVITY CHART:", {
-    labels,
-    conversations,
-    messages,
-  });
-
-  activityChart = new Chart(canvas, {
-    type: "line",
-
-    data: {
-      labels,
-
-      datasets: [
-        {
-          label: "Conversations",
-
-          data: conversations,
-
-          borderColor: "#4f46e5",
-
-          backgroundColor: "rgba(79, 70, 229, 0.12)",
-
-          borderWidth: 2,
-
-          tension: 0.35,
-
-          fill: true,
-
-          pointRadius: 3,
-
-          pointHoverRadius: 5,
-        },
-
-        {
-          label: "Messages",
-
-          data: messages,
-
-          borderColor: "#06b6d4",
-
-          backgroundColor: "rgba(6, 182, 212, 0.08)",
-
-          borderWidth: 2,
-
-          tension: 0.35,
-
-          fill: false,
-
-          pointRadius: 3,
-
-          pointHoverRadius: 5,
-        },
-      ],
-    },
-
-    options: {
-      responsive: true,
-
-      maintainAspectRatio: false,
-
-      interaction: {
-        mode: "index",
-
-        intersect: false,
-      },
-
-      plugins: {
-        legend: {
-          display: true,
-
-          position: "top",
-        },
-
-        tooltip: {
-          enabled: true,
-        },
-      },
-
-      scales: {
-        x: {
-          grid: {
-            display: false,
-          },
-        },
-
-        y: {
-          beginAtZero: true,
-
-          ticks: {
-            precision: 0,
-          },
-        },
-      },
-    },
-  });
-}
-
-/* =========================================================
-   COMPARISON CHART
-========================================================= */
-
-function renderComparisonChart(data) {
-  const canvas = getElement("dashboard-comparison-chart");
-
-  if (!canvas) {
-    console.warn("Dashboard comparison chart canvas not found.");
-
-    return;
-  }
-
-  if (typeof Chart === "undefined") {
-    console.error("Chart.js is not loaded.");
-
-    return;
-  }
-
-  const { labels, conversations, messages } = normalizeActivityData(data);
-
-  comparisonChart = new Chart(canvas, {
-    type: "bar",
-
-    data: {
-      labels,
-
-      datasets: [
-        {
-          label: "Conversations",
-
-          data: conversations,
-
-          backgroundColor: "rgba(79, 70, 229, 0.75)",
-
-          borderColor: "#4f46e5",
-
-          borderWidth: 1,
-
-          borderRadius: 4,
-        },
-
-        {
-          label: "Messages",
-
-          data: messages,
-
-          backgroundColor: "rgba(6, 182, 212, 0.75)",
-
-          borderColor: "#06b6d4",
-
-          borderWidth: 1,
-
-          borderRadius: 4,
-        },
-      ],
-    },
-
-    options: {
-      responsive: true,
-
-      maintainAspectRatio: false,
-
-      plugins: {
-        legend: {
-          display: true,
-
-          position: "top",
-        },
-
-        tooltip: {
-          enabled: true,
-        },
-      },
-
-      scales: {
-        x: {
-          grid: {
-            display: false,
-          },
-        },
-
-        y: {
-          beginAtZero: true,
-
-          ticks: {
-            precision: 0,
-          },
-        },
-      },
-    },
-  });
+function getDashboardActivity(data) {
+  return (
+    data?.activity ??
+    data?.chat_activity ??
+    data?.chatActivity ??
+    data?.activity_overview ??
+    null
+  );
 }
 
 /* =========================================================
@@ -344,60 +121,41 @@ function renderComparisonChart(data) {
 ========================================================= */
 
 function renderDashboard(data) {
-  console.log("DASHBOARD RENDER DATA:", data);
+  console.log("DASHBOARD CONTROLLER: render", data);
 
-  /*
-   * Current backend response:
-   *
-   * data.activity = {
-   *   labels: [...],
-   *   conversations: [...],
-   *   messages: [...]
-   * }
-   *
-   * Keep support for alternative property names in case
-   * another dashboard response uses them.
-   */
-
-  const activity =
-    data?.activity ??
-    data?.chat_activity ??
-    data?.chatActivity ??
-    data?.activity_overview ??
-    null;
-
-  console.log("DASHBOARD ACTIVITY DATA:", activity);
+  const activity = getDashboardActivity(data);
 
   if (!activity) {
-    console.error("Dashboard activity data is missing:", data);
+    console.warn("Dashboard activity data is missing.");
 
-    destroyCharts();
+    destroyDashboardCharts();
 
     return;
   }
 
   const normalizedActivity = normalizeActivityData(activity);
 
-  if (
-    !normalizedActivity.labels.length &&
-    !normalizedActivity.conversations.length &&
-    !normalizedActivity.messages.length
-  ) {
-    console.warn("Dashboard activity contains no chart data:", activity);
+  console.log("DASHBOARD ACTIVITY DATA:", normalizedActivity);
 
-    destroyCharts();
+  const hasChartData =
+    normalizedActivity.labels.length > 0 ||
+    normalizedActivity.conversations.length > 0 ||
+    normalizedActivity.messages.length > 0;
+
+  if (!hasChartData) {
+    console.warn("Dashboard activity contains no chart data.");
+
+    destroyDashboardCharts();
 
     return;
   }
 
   /*
-   * Destroy old Chart.js instances before creating new ones.
+   * Chart rendering has exactly one owner:
+   *
+   *     dashboard.charts.js
    */
-  destroyCharts();
-
-  renderActivityChart(normalizedActivity);
-
-  renderComparisonChart(normalizedActivity);
+  renderDashboardCharts(normalizedActivity);
 }
 
 /* =========================================================
@@ -405,11 +163,6 @@ function renderDashboard(data) {
 ========================================================= */
 
 export function initDashboard() {
-  /*
-   * Prevent duplicate dashboard requests when navigation
-   * or initialization fires more than once.
-   */
-
   if (dashboardLoading) {
     console.log("DASHBOARD: fetch already in progress");
 
@@ -423,16 +176,15 @@ export function initDashboard() {
   }
 
   dashboardInitialized = true;
-
   dashboardLoading = true;
 
   fetchDashboard()
     .catch((error) => {
       /*
        * fetchDashboard already emits dashboard:error.
+       *
        * This catch prevents an unhandled promise rejection.
        */
-
       console.error("DASHBOARD INITIALIZATION ERROR:", error);
     })
     .finally(() => {
@@ -466,11 +218,11 @@ export function handleDashboardError(data) {
   console.error("DASHBOARD CONTROLLER: error", data);
 
   /*
-   * Allow a future retry if the initial request fails.
+   * Allow another initialization attempt after
+   * a failed request.
    */
-
   dashboardInitialized = false;
   dashboardLoading = false;
 
-  destroyCharts();
+  destroyDashboardCharts();
 }

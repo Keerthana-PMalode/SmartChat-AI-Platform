@@ -18,6 +18,8 @@ const allowedSections = new Set([
   "users",
   "chat-history",
   "analytics",
+  "settings",
+  "logs",
 ]);
 
 /* =========================================================

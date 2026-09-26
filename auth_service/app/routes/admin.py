@@ -1,7 +1,11 @@
+from urllib import request
+
 from app.core.auth import hash_password
 from app.core.dependencies import get_db, require_admin
 from app.models.chat import ChatHistory, ChatMessage
 from app.models.user import User
+from app.models.system import AuditLog
+
 from app.schemas.admin import CreateUserRequest, UpdateRoleRequest
 from app.schemas.chat import ChatCreate, ChatResponse
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,6 +15,8 @@ from datetime import date, datetime, timedelta, time
 from sqlalchemy.exc import IntegrityError
 
 from app.routes.admin_analytics import ANALYTICS_TIMEZONE
+from app.models import user
+
 
 router = APIRouter()
 
@@ -202,6 +208,14 @@ def create_user(
         role=request.role,
     )
     db.add(user)
+    db.flush()
+
+    create_audit_log(
+        db,
+        admin,
+            "Created user",
+        f"Created user '{user.username}' with role '{user.role}'",
+    )
     db.commit()
     db.refresh(user)
     return user
@@ -218,10 +232,22 @@ def update_role(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    old_role = user.role
+
     user.role = request.role
+
+    create_audit_log(
+        db,
+        admin,
+        "Changed user role",
+        (
+            f"User '{user.username}': "
+            f"{old_role} -> {user.role}"
+        ),
+    )
+
     db.commit()
     db.refresh(user)
-    return user
 
 
 @router.delete("/users/{user_id}")
@@ -256,6 +282,13 @@ def delete_user(
 
     # Save values before deleting the SQLAlchemy object
     deleted_username = user.username
+
+    create_audit_log(
+        db,
+        admin,
+        "Deleted user",
+        f"Deleted user '{deleted_username}'",
+    )
 
     try:
         db.delete(user)
@@ -460,3 +493,21 @@ def delete_chat_history(
     db.commit()
 
     return {"detail": f"Chat history for session '{session_id}' has been deleted"}
+
+
+def create_audit_log(
+    db,
+    admin,
+    action,
+    details=None,
+    level="info",
+):
+    log = AuditLog(
+        user_id=admin.id if admin else None,
+        username=admin.username if admin else None,
+        level=level,
+        action=action,
+        details=details,
+    )
+
+    db.add(log)

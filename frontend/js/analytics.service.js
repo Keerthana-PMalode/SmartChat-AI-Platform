@@ -18,8 +18,14 @@ function buildQueryParams(startDate, endDate) {
   return params;
 }
 
-async function fetchEndpoint(endpoint) {
+async function fetchEndpoint(endpoint, extraParams = {}) {
   const params = buildQueryParams(currentStartDate, currentEndDate);
+
+  Object.entries(extraParams).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      params.set(key, value);
+    }
+  });
 
   const query = params.toString();
 
@@ -154,10 +160,10 @@ export async function exportAnalytics() {
 
     rows.push(["", ""]);
 
-    rows.push(["Date", "Chats", "Users", "Sessions"]);
+    rows.push(["Date", "Chats", "Users", "Messages"]);
 
     data.chatActivity.forEach((item) => {
-      rows.push([item.date, item.chats, item.users, item.sessions]);
+      rows.push([item.date, item.chats, item.users, item.messages]);
     });
 
     rows.push(["", "", "", ""]);

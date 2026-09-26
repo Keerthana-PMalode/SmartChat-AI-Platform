@@ -22,7 +22,9 @@ API REQUEST
 
 async function request(endpoint, options = {}) {
   const url = `${API_CONFIG.BASE_URL}${endpoint}`;
+
   console.log("Request URL:", url);
+
   const retries = options.retries ?? API_CONFIG.RETRIES;
 
   let attempt = 0;
@@ -35,42 +37,44 @@ async function request(endpoint, options = {}) {
     try {
       const token = getToken();
 
-      /* ========================= REQUEST ========================= */
-
       const response = await fetch(url, {
         method: options.method || "GET",
+
         headers: {
           "Content-Type": "application/json",
+
           ...(token && {
             Authorization: `Bearer ${token}`,
           }),
+
           ...(options.headers || {}),
         },
-        body: options.body ? JSON.stringify(options.body) : null,
+
+        body:
+          options.body !== undefined && options.body !== null
+            ? JSON.stringify(options.body)
+            : null,
+
         signal: controller.signal,
       });
 
       clearTimeout(timeoutId);
 
-      /* ========================= RESPONSE ========================= */
-
       const data = await handleResponse(response);
 
-      return data; // success → exit loop
+      return data;
     } catch (error) {
       clearTimeout(timeoutId);
 
-      /* ========================= RETRY ========================= */
-
       const isLastAttempt = attempt === retries;
-      const shouldRetryRequest = isRetryable(error) && options.method === "GET";
+
+      const shouldRetryRequest =
+        isRetryable(error) && (options.method || "GET").toUpperCase() === "GET";
 
       if (!isLastAttempt && shouldRetryRequest) {
         attempt++;
         continue;
       }
-
-      /* ========================= FINAL ERROR ========================= */
 
       handleError(error);
       throw error;
@@ -84,8 +88,7 @@ RETRY HANDLING
 
 function isRetryable(error) {
   return (
-    error.name === "AbortError" || // timeout
-    error.message.includes("Failed to fetch") // network
+    error?.name === "AbortError" || error?.message?.includes("Failed to fetch")
   );
 }
 
@@ -97,17 +100,65 @@ async function handleResponse(response) {
   if (response.status === 401) {
     clearToken();
     window.location.href = "/login.html";
-    throw new Error("Unauthorized");
+
+    const error = new Error("Unauthorized");
+    error.status = 401;
+
+    throw error;
   }
 
-  /* ========================= API ERROR ========================= */
-
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || "API Error");
+    let errorData = null;
+
+    try {
+      errorData = await response.json();
+    } catch {
+      // Response was not JSON.
+    }
+
+    const error = new Error(
+      errorData?.detail
+        ? formatApiError(errorData.detail)
+        : `API request failed with status ${response.status}`,
+    );
+
+    // Important: controllers can now inspect error.status.
+    error.status = response.status;
+
+    // Preserve the original FastAPI validation response.
+    error.data = errorData;
+
+    throw error;
+  }
+
+  // Handle successful responses with no body.
+  if (response.status === 204) {
+    return null;
   }
 
   return response.json();
+}
+
+/* =========================
+API ERROR FORMATTING
+========================= */
+
+function formatApiError(detail) {
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        const location = Array.isArray(item.loc) ? item.loc.join(".") : "";
+
+        return location ? `${location}: ${item.msg}` : item.msg;
+      })
+      .join("; ");
+  }
+
+  if (typeof detail === "string") {
+    return detail;
+  }
+
+  return "API request failed.";
 }
 
 /* =========================
@@ -115,7 +166,11 @@ ERROR LOGGING
 ========================= */
 
 function handleError(error) {
-  console.error("API Error:", error.message);
+  console.error("API Error:", {
+    status: error?.status,
+    message: error?.message,
+    data: error?.data,
+  });
 }
 
 /* =========================
@@ -124,7 +179,9 @@ API CLIENT
 
 export const api = {
   get(endpoint) {
-    return request(endpoint, { method: "GET" });
+    return request(endpoint, {
+      method: "GET",
+    });
   },
 
   post(endpoint, body) {
@@ -154,3 +211,15 @@ export const api = {
     });
   },
 };
+
+/* =========================
+ADMIN SETTINGS API
+========================= */
+
+export async function getSettings() {
+  return api.get("/admin/settings");
+}
+
+export async function updateSettings(payload) {
+  return api.put("/admin/settings", payload);
+}

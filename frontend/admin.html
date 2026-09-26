@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="css/admin.css" />
     <link rel="stylesheet" href="./css/analytics.css" />
     <link rel="stylesheet" href="./css/dashboard.css" />
+    <link rel="stylesheet" href="./css/logs.css" />
   </head>
   <body>
     <div id="app-content" class="dashboard">
@@ -315,7 +316,7 @@
                   <i class="fas fa-sync-alt"></i>
                   Refresh
                 </button>
-                <button id="export-chat-btn" class="primary-btn">
+                <button id="chat-export-btn" class="primary-btn">
                   <i class="fas fa-file-export"></i>
                   Export
                 </button>
@@ -503,7 +504,7 @@
                 Refresh
               </button>
               <button
-                id="analytics-export"
+                id="analytics-export-btn"
                 class="analytics-button analytics-button-secondary"
                 type="button"
               >
@@ -627,57 +628,225 @@
           </div>
         </section>
         <!-- Settings -->
-        <section id="settings-panel" class="content-panel hidden">
-          <div class="card">Settings</div>
-        </section>
-        <!-- Logs -->
-        <section id="logs-panel" class="content-panel hidden">
-          <div class="section-card">
-            <!-- Header -->
+        <section id="settings-section" class="content-section content-panel" hidden>
+          <div class="section-card settings-card">
             <div class="section-header">
-              <h2>System Logs</h2>
-              <button class="primary-btn" id="download-logs-btn">
-                <i class="fas fa-download"></i>
-                Download
+              <div>
+                <h2>Settings</h2>
+                <p class="settings-description">
+                  Configure application-wide settings.
+                </p>
+              </div>
+
+              <button
+                id="settings-refresh-btn"
+                class="secondary-btn"
+                type="button"
+              >
+                <i class="fas fa-sync-alt"></i>
+                Refresh
               </button>
             </div>
-            <!-- Toolbar -->
-            <div class="section-toolbar">
+
+            <form id="settings-form">
+              <div class="settings-grid">
+                <!-- Application Name -->
+                <div class="settings-group">
+                  <label for="setting-application-name">
+                    Application Name
+                  </label>
+
+                  <input
+                    id="setting-application-name"
+                    type="text"
+                    name="application_name"
+                    placeholder="ChatBot"
+                    maxlength="100"
+                    required
+                    autocomplete="off"
+                  />
+
+                  <small> Name displayed by the application. </small>
+                </div>
+
+                <!-- Maximum Message Length -->
+                <div class="settings-group">
+                  <label for="setting-max-message-length">
+                    Maximum Message Length
+                  </label>
+
+                  <input
+                    id="setting-max-message-length"
+                    type="number"
+                    name="max_message_length"
+                    min="1"
+                    max="100000"
+                    step="1"
+                    required
+                  />
+
+                  <small>
+                    Maximum number of characters allowed in a message.
+                  </small>
+                </div>
+
+                <!-- Maintenance Mode -->
+                <div class="settings-group settings-toggle-group">
+                  <div>
+                    <label for="setting-maintenance-mode">
+                      Maintenance Mode
+                    </label>
+
+                    <small>
+                      Prevent normal application usage while enabled.
+                    </small>
+                  </div>
+
+                  <label class="switch">
+                    <input
+                      id="setting-maintenance-mode"
+                      type="checkbox"
+                      name="maintenance_mode"
+                    />
+
+                    <span class="slider"></span>
+                  </label>
+                </div>
+
+                <!-- User Registration -->
+                <div class="settings-group settings-toggle-group">
+                  <div>
+                    <label for="setting-registration">
+                      Allow User Registration
+                    </label>
+
+                    <small> Allow new users to register. </small>
+                  </div>
+
+                  <label class="switch">
+                    <input
+                      id="setting-registration"
+                      type="checkbox"
+                      name="allow_user_registration"
+                    />
+
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <div
+                id="settings-status"
+                class="settings-status"
+                role="status"
+                aria-live="polite"
+                hidden
+              ></div>
+
+              <div class="settings-actions">
+                <button
+                  type="button"
+                  id="settings-reset-btn"
+                  class="secondary-btn"
+                >
+                  Reset
+                </button>
+
+                <button
+                  type="submit"
+                  id="settings-save-btn"
+                  class="primary-btn"
+                >
+                  <i class="fas fa-save"></i>
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- Logs -->
+        <section id="logs-section" class="content-section content-panel" hidden>
+          <div class="section-card">
+            <div class="section-header">
+              <div>
+                <h2>System Logs</h2>
+                <p class="logs-description">
+                  Review administrative and application activity.
+                </p>
+              </div>
+
+              <div class="section-actions">
+                <button
+                  class="secondary-btn"
+                  id="refresh-logs-btn"
+                  type="button"
+                >
+                  <i class="fas fa-sync-alt"></i>
+                  Refresh
+                </button>
+
+                <button
+                  class="primary-btn"
+                  id="download-logs-btn"
+                  type="button"
+                >
+                  <i class="fas fa-download"></i>
+                  Download
+                </button>
+              </div>
+            </div>
+
+            <div class="section-toolbar logs-toolbar">
               <select id="log-level-filter">
                 <option value="all">All Levels</option>
+
                 <option value="info">Info</option>
+
                 <option value="warning">Warning</option>
+
                 <option value="error">Error</option>
               </select>
+
               <div class="search-box">
                 <input
                   type="text"
                   id="log-search"
                   placeholder="Search logs..."
+                  autocomplete="off"
                 />
-                <button>
+
+                <button
+                  id="log-search-btn"
+                  type="button"
+                  aria-label="Search logs"
+                  title="Search"
+                >
                   <i class="fas fa-search"></i>
                 </button>
               </div>
             </div>
-            <!-- Content -->
+
             <div class="table-wrapper">
               <table class="logs-table">
                 <thead>
                   <tr>
                     <th>Timestamp</th>
                     <th>User</th>
+                    <th>Level</th>
                     <th>Action</th>
+                    <th>Details</th>
                   </tr>
                 </thead>
-                <tbody id="logs-tbody">
-                  <!-- Dynamic Logs -->
-                </tbody>
+
+                <tbody id="logs-tbody"></tbody>
               </table>
             </div>
-            <!-- Footer -->
+
             <div class="section-footer">
-              <span id="logs-summary"> Showing latest logs </span>
+              <span id="logs-summary"> Loading logs... </span>
+
+              <div id="logs-pagination" class="pagination"></div>
             </div>
           </div>
         </section>
