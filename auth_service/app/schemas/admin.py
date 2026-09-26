@@ -1,4 +1,10 @@
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
+
+class CreateAuditLogRequest(BaseModel):
+    level: Literal["info", "warning", "error"] = "info"
+    action: str
+    details: str | None = None
 
 
 class CreateUserRequest(BaseModel):

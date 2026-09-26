@@ -1447,6 +1447,76 @@ For local development:
 
 ---
 
+## Administrative Settings Development
+
+The Admin UI provides a Settings section backed by `/admin/settings`. The
+implementation is split between `admin_api.js` and `settings.controller.js`;
+navigation emits `settings:load-requested`, which causes the controller to load the current values.
+
+The current settings are:
+
+- `application_name` — default `ChatBot`, validated to 1–100 characters.
+- `max_message_length` — default `5000`, validated from 1 through 100000.
+- `maintenance_mode` — default `false`.
+- `allow_user_registration` — default `true`.
+
+The controller supports Refresh, Reset-to-defaults, and Save Changes. Successful
+updates report the returned setting keys. Validation failures with HTTP 422 are
+presented as settings validation errors. Backend setting updates also create an
+`AuditLog` record.
+
+### Settings Development Verification
+
+1. Sign in with an administrator account.
+2. Open **Settings** and verify the four current/default values load.
+3. Change one or more values and save.
+4. Verify the response reports the updated keys and the UI shows success.
+5. Enter values outside the documented validation ranges and verify the UI reports a validation error.
+6. Use Refresh and verify the persisted backend values are loaded again.
+7. Use Reset and verify that only the form is returned to the documented defaults; saving is required to persist those values.
+
+---
+
+## Administrative System Logs Development
+
+Administrative audit records are stored in the Auth Service `audit_logs` table.
+The `AuditLog` model contains `user_id`, `username`, `level`, `action`, optional
+`details`, and `timestamp`. Administrative user operations and system-setting
+updates create audit records through the shared audit-log helper.
+
+The Admin Logs section uses `/admin/logs` for retrieval and supports:
+
+- level filtering (`all`, `info`, `warning`, `error`);
+- case-insensitive search across action, details, and username;
+- pagination with a default page size of 50 and a maximum of 200;
+- newest-first ordering;
+- Refresh and CSV Download controls.
+
+`GET /admin/logs/export` applies the same level/search filters and returns a CSV
+file named `system_logs.csv`. `POST /admin/logs` is available for creating manual `info`, `warning`, or `error` log entries and requires an action.
+
+The Admin page loads `logs.css` for the logs section styling.
+
+### System Logs Development Verification
+
+1. Perform an administrative action such as creating a user, changing a role,
+   deleting a user, or updating settings.
+2. Open **Logs** and verify the corresponding audit record is visible.
+3. Filter by level and verify unrelated levels are excluded.
+4. Search by username or action/detail text and verify matching records are returned.
+5. Change pages and verify pagination metadata and newest-first ordering.
+6. Use Download and verify the CSV contains Timestamp, User, Level, Action, and
+   Details columns.
+7. Verify ordinary users cannot access the administrative log endpoints.
+
+---
+
+## Frontend API Error Handling
+
+`frontend/js/admin_api.js` now exposes HTTP status and parsed response data on API errors. JSON error responses containing FastAPI/Pydantic validation details are formatted into readable field/message text. Successful HTTP 204 responses return `null`. Retry behavior remains restricted to retryable GET requests.
+
+---
+
 ## Pending Development and Hardening Items
 
 The following items have been identified during development and testing and

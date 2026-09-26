@@ -21,7 +21,8 @@
 ## 19. Admin Frontend Navigation and Session Cleanup Testing
 ## 20. Administrative Dashboard Testing
 ## 21. Administrative Analytics Testing
-## 22. Updated Verification Summary
+## 22. Administrative Settings and System Logs Testing
+## 23. Updated Verification Summary
 
 
 ## 4. Chat History Isolation Testing
@@ -1853,7 +1854,94 @@ In the Admin UI:
 
 ---
 
-## 22. Updated Verification Summary
+## 22. Administrative Settings and System Logs Testing
+
+### 22.1 Settings Authorization and Defaults
+
+Call:
+
+```http
+GET /admin/settings
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that an administrator receives the four documented settings. Confirm that
+missing database rows are supplied from the backend defaults. Repeat with a valid ordinary-user JWT and verify that access is rejected with `403 Forbidden`.
+
+### 22.2 Settings Validation
+
+Call:
+
+```http
+PUT /admin/settings
+Authorization: Bearer <ADMIN_JWT>
+Content-Type: application/json
+```
+
+Verify that valid values are persisted and that unknown fields or values outside
+the documented ranges are rejected by validation. Confirm that the successful
+response lists the updated setting keys.
+
+### 22.3 Settings UI
+
+In the Admin UI:
+
+1. Open **Settings** and verify values load.
+2. Change values and save them.
+3. Verify the success status and updated keys.
+4. Use Refresh and verify persisted values are restored.
+5. Use Reset and verify the form returns to defaults without an implicit save.
+
+### 22.4 Administrative Audit Log Creation
+
+Perform administrator actions that are documented as audited, including user
+creation, role changes, user deletion, and system-setting updates. Verify that
+corresponding `audit_logs` records contain the administrator identity, action,
+level, optional details, and timestamp.
+
+### 22.5 Log Filtering, Search, and Pagination
+
+Call:
+
+```http
+GET /admin/logs?page=1&page_size=50&level=info&search=<term>
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify level filtering, case-insensitive matching against action/details/username, newest-first ordering, and correct `page`, `page_size`, `total`, and `total_pages` metadata. Verify that `page_size` values outside 1–200 are rejected.
+
+### 22.6 Log Export
+
+Call:
+
+```http
+GET /admin/logs/export?level=info&search=<term>
+Authorization: Bearer <ADMIN_JWT>
+```
+
+Verify that the response is CSV, uses the filename `system_logs.csv`, respects the selected filters, and contains Timestamp, User, Level, Action, and Details columns.
+
+### 22.7 Manual Log Creation
+
+Call:
+
+```http
+POST /admin/logs
+Authorization: Bearer <ADMIN_JWT>
+Content-Type: application/json
+```
+
+Verify that `info`, `warning`, and `error` levels are accepted and that missing
+`action` or unsupported levels return `400 Bad Request`.
+
+### 22.8 Admin Logs UI
+
+Open **Logs** and verify that the table displays timestamp, user, level, action,
+and details. Verify Refresh, level filtering, search, pagination, and Download.
+
+---
+
+## 23. Updated Verification Summary
 
 The recent Git changes introduce the following verification targets in addition to the existing authentication, chat-isolation, file, sharing, audit, encryption, routing, database, and Docker tests:
 
@@ -1876,4 +1964,7 @@ The recent Git changes introduce the following verification targets in addition 
 | Dashboard errors | Loading/error states handled without stale loading values |
 | Analytics API | Daily chat activity returns chats, users, and messages |
 | Analytics loading | Analytics load triggered when Analytics section is selected |
+| Settings API/UI | Settings load, validation, reset, and save behavior |
+| System logs | Audit creation, filtering, search, pagination, and CSV export |
+| API client | Structured HTTP errors and 204 response handling |
 | Logout | Authentication/session-related localStorage cleanup |

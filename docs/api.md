@@ -210,6 +210,93 @@ This endpoint is intended for administrative retrieval and is distinct from the 
 
 Deletes chat-history records associated with the specified session. Associated messages are removed through the configured database relationship.
 
+### GET /admin/settings
+
+Returns the current administrator-configurable application settings. Missing persisted settings are populated from backend defaults. The response has the form:
+
+```json
+{
+  "status": "success",
+  "settings": {
+    "application_name": "ChatBot",
+    "max_message_length": 5000,
+    "maintenance_mode": false,
+    "allow_user_registration": true
+  }
+}
+```
+
+The endpoint requires administrator authorization. Boolean settings are serialized as booleans and `max_message_length` is serialized as an integer.
+
+### PUT /admin/settings
+
+Updates one or more administrator-configurable settings. The accepted fields are:
+
+- `application_name`: string, 1–100 characters
+- `max_message_length`: integer, 1–100000
+- `maintenance_mode`: boolean
+- `allow_user_registration`: boolean
+
+Unknown fields are rejected by the request schema. A successful update returns the list of setting keys that were updated and records an administrative audit event.
+
+```json
+{
+  "status": "success",
+  "updated": [
+    "application_name",
+    "max_message_length",
+    "maintenance_mode",
+    "allow_user_registration"
+  ]
+}
+```
+
+### GET /admin/logs
+
+Returns administrator audit logs with filtering, search, and pagination. Query
+parameters are:
+
+```text
+page=1
+page_size=50
+level=all
+search=<optional>
+```
+
+`page_size` is limited to 1–200. `level` can be `all` or a specific stored log
+level. Search performs a case-insensitive match against the action, details, and username fields. Results are ordered newest first.
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "timestamp": "<timestamp>",
+      "user_id": 1,
+      "user": "admin",
+      "level": "info",
+      "action": "Updated system settings",
+      "details": "application_name, max_message_length, maintenance_mode, allow_user_registration"
+    }
+  ],
+  "page": 1,
+  "page_size": 50,
+  "total": 1,
+  "total_pages": 1
+}
+```
+
+### GET /admin/logs/export
+
+Exports audit logs as CSV. The `level` and `search` filters use the same semantics
+as `GET /admin/logs`. The generated file is returned as `system_logs.csv` with
+columns `Timestamp`, `User`, `Level`, `Action`, and `Details`.
+
+### POST /admin/logs
+
+Creates a manual administrative log entry. The accepted levels are `info`,
+`warning`, and `error`. `action` is required; `details` is optional. Invalid log levels or missing actions return `400 Bad Request`.
+
 ---
 
 ## Administrative Analytics API
@@ -385,7 +472,13 @@ The Admin frontend uses `frontend/js/admin_api.js` with:
 - bearer-token injection from `localStorage.authToken`;
 - a 10-second request timeout;
 - one retry for retryable GET failures such as timeout/network errors;
-- automatic token removal and redirect to `/login.html` on HTTP 401.
+- automatic token removal and redirect to `/login.html` on HTTP 401;
+- structured API errors exposing `status` and the original parsed response data;
+- formatted Pydantic validation errors when the response contains a validation-error list;
+- `null` return handling for HTTP 204 responses.
+
+The client also exposes `getSettings()` and `updateSettings()` wrappers for the
+administrative settings endpoints.
 
 The client exposes `get`, `post`, `put`, `patch`, and `delete` helpers.
 

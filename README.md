@@ -3,7 +3,7 @@
 A production-style AI chatbot platform built using **Rasa**, **FastAPI**, **PostgreSQL**, **Docker Compose**, and **Nginx**.
 
 SmartChat combines conversational AI, secure authentication, encrypted file
-management, and a modular microservice architecture.
+management, administrative dashboards and analytics, and a modular microservice architecture.
 
 ---
 
@@ -12,11 +12,14 @@ management, and a modular microservice architecture.
 - 🤖 AI chatbot powered by Rasa Open Source
 - 🔐 JWT authentication and role-based authorization
 - 📁 Encrypted file upload, download, and sharing
-- 🗄 PostgreSQL database
+- 🗄  PostgreSQL database
 - 🐳 Dockerized microservices
 - 🌐 Nginx reverse proxy
 - ⚡ FastAPI REST APIs
-- 📚 Modular project architecture
+- 📊 Administrative dashboard with application activity insights
+- 📈 Chat and message analytics
+- 👥 User and conversation activity monitoring
+- 📚 Modular frontend and backend architecture
 
 ---
 
@@ -28,6 +31,7 @@ management, and a modular microservice architecture.
 | AI | Rasa Open Source |
 | Database | PostgreSQL |
 | Frontend | HTML, CSS, JavaScript |
+| Charts   | Chart.js |
 | Containerization | Docker, Docker Compose |
 | Web Server | Nginx |
 | Authentication | JWT |
@@ -69,6 +73,8 @@ Nginx
                          └──────────► Encrypted File Storage
 ```
 
+The Auth Service also provides the administrative dashboard and analytics APIs used by the frontend to display application statistics, recent activity, and chat activity.
+
 For detailed service interactions, authentication, database relationships,
 encryption, authorization, and request flows, see Architecture.
 
@@ -84,6 +90,45 @@ encryption, authorization, and request flows, see Architecture.
 - JWT token generation and validation
 - Role-based access control
 - User administration
+- Administrative system settings
+- Administrative system logs and CSV export
+
+## Admin Dashboard
+
+The admin dashboard provides a centralized overview of application activity.
+
+### Dashboard statistics
+
+The dashboard displays:
+
+Total registered users
+Total conversations
+Total messages
+Active users
+
+An **active user**    is currently defined as a user who has at least one conversation in the system.
+
+### Activity overview
+
+The dashboard includes a seven-day activity view showing:
+
+- Daily conversations
+- Daily messages
+- Activity labels based on the configured analytics timezone
+
+Charts are rendered in the frontend using **Chart.js**.
+
+### Recent activity
+
+The dashboard also provides quick access to:
+
+- Five most recently created users
+- Five most recent conversations
+- Usernames and roles
+- Conversation timestamps
+- Conversation/session identifiers
+
+This provides administrators with a quick overview of recent system activity without navigating to the detailed management pages.
 
 ## Chatbot
 
@@ -95,6 +140,31 @@ encryption, authorization, and request flows, see Architecture.
 - Session-based conversation tracking
 
 SmartChat does not support guest or unauthenticated chatbot sessions.
+
+## Analytics
+
+The administrative analytics section provides application usage insights, including:
+
+- Total users
+- Active users
+- Chat/conversation activity
+- Unique users participating in conversations
+- Message activity
+- Top users
+- Hourly chat activity
+- Configurable date ranges and presets
+
+The chat activity analytics now reports **messages** instead of session counts.
+
+Daily chat activity contains:
+
+| Metric | Description |
+|----------|--------------|
+| Chats | Number of conversations |
+| Users | Number of unique users |
+| Messages | Number of messages associated with conversations |
+
+Date-based analytics use the configured `ANALYTICS_TIMEZONE` to ensure activity is grouped according to the application's analytics timezone.
 
 ## File Management
 
@@ -113,9 +183,13 @@ SmartChat does not support guest or unauthenticated chatbot sessions.
 
 ```text
 SmartChat-AI-Platform/
-│
-├── auth_service/              # Authentication and user management
+├── auth_service/      # Authentication, administration, and user management
 │   ├── app/
+│   │   ├── routes/
+│   │   │   ├── admin.py       # Admin dashboard and administration endpoints
+│   │   │   └── admin_analytics.py # Administrative analytics endpoints
+│   │   └── models/
+│   │       └── system.py      # System settings and administrative audit logs
 │   └── scripts/
 │
 ├── file_service/              # Secure encrypted file management
@@ -127,7 +201,19 @@ SmartChat-AI-Platform/
 ├── frontend/                  # HTML, CSS, and JavaScript frontend
 │   ├── assets/
 │   ├── css/
+│   │   ├── admin.css
+│   │   ├── analytics.css
+│   │   └── dashboard.css      # Admin dashboard styling
 │   └── js/
+│       ├── admin.js            # Admin application controller
+│       ├── admin_state.js      # Admin navigation state
+│       ├── admin_ui.js         # Admin UI rendering
+│       ├── analytics.js        # Analytics functionality
+│       ├── analytics.controller.js
+│       ├── analytics.events.js
+│       ├── dashboard.js        # Dashboard initialization
+│       ├── dashboard.charts.js # Dashboard chart rendering
+│       └── dashboard.service.js # Dashboard API service
 │
 ├── nginx/                     # Nginx reverse proxy configuration
 │
@@ -290,7 +376,7 @@ Nginx provides the normal browser-facing API routes:
 
 | Route      | Purpose                  |
 |------------|--------------------------|
-| `/auth/*`  | Authentication and user APIs |
+| `/auth/*`  | Authentication, administration, user, and analytics APIs |
 | `/rasa/*`  | Rasa conversational API  |
 | `/files/*` | File-management API      |
 
@@ -310,16 +396,80 @@ browser application traffic should use Nginx on port 8081.
 
 ---
 
+## Admin Dashboard and Analytics
+
+Administrators can access the dashboard after authentication.
+
+The admin interface is organized into the following sections:
+
+- **Dashboard** — application overview and recent activity
+- **Users** — user administration
+- **Chat History** — conversation history
+- **Analytics** — detailed usage and activity analytics
+
+### Dashboard data flow
+
+The dashboard follows a service/event-based frontend architecture:
+
+```text
+Admin Navigation
+       │
+       ▼
+Dashboard Section
+       │
+       ▼
+Dashboard Service
+       │
+       ▼
+GET /admin/dashboard
+       │
+       ▼
+Auth Service
+       │
+       ├── User statistics
+       ├── Conversation statistics
+       ├── Message statistics
+       ├── Active users
+       ├── Recent users
+       ├── Recent conversations
+       └── Seven-day activity
+       │
+       ▼
+Dashboard Events
+       │
+       ▼
+Admin UI + Chart.js
+```
+
+The dashboard uses separate frontend modules for API access, initialization, chart rendering, and UI updates.
+
+Dashboard loading and error states are also communicated through the admin event system.
+
+### Analytics activity model
+
+The analytics chat activity endpoint reports three daily metrics:
+
+- `chats` — distinct conversations
+- `users` — distinct users
+- `messages` — total messages
+
+The previous session-based activity metric has been replaced with message counts to provide a more direct view of chatbot usage.
+
+---
+
 # Security
 
 SmartChat uses JWT-based authentication for protected APIs.
 
 Authenticated users can access only resources authorized for their account.
+
 Chat history is scoped by both the conversation session_id and the
 authenticated user's identity.
 
+Administrative endpoints require appropriate administrative authorization.
+
 Uploaded files are encrypted using unique Fernet file encryption keys. The
-file keys are protected using the server-side FILE_MASTER_KEY.
+file keys are protected using the server-side `FILE_MASTER_KEY`.
 
 File-related operations can be recorded in audit logs.
 
@@ -343,6 +493,8 @@ Architecture.
 ---
 
 ## Admin Dashboard
+
+The admin dashboard provides application statistics, seven-day activity charts, recent users, and recent conversations.
 
 ![Admin](docs/images/admin-dashboard.png)
 
@@ -400,6 +552,9 @@ Detailed project documentation is available in the docs/ directory.
 - WebSockets
 - Monitoring
 - Expanded unit testing
+- Advanced dashboard filtering
+- Additional administrative analytics
+- Real-time activity monitoring
 
 ---
 

@@ -1,21 +1,18 @@
-from urllib import request
-
 from app.core.auth import hash_password
 from app.core.dependencies import get_db, require_admin
+from app.core.audit import create_audit_log
 from app.models.chat import ChatHistory, ChatMessage
 from app.models.user import User
-from app.models.system import AuditLog
 
 from app.schemas.admin import CreateUserRequest, UpdateRoleRequest
-from app.schemas.chat import ChatCreate, ChatResponse
+from app.schemas.chat import ChatResponse
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_, String
-from datetime import date, datetime, timedelta, time
+from datetime import datetime, timedelta, time
 from sqlalchemy.exc import IntegrityError
 
 from app.routes.admin_analytics import ANALYTICS_TIMEZONE
-from app.models import user
 
 
 router = APIRouter()
@@ -213,7 +210,7 @@ def create_user(
     create_audit_log(
         db,
         admin,
-            "Created user",
+        "Created user",
         f"Created user '{user.username}' with role '{user.role}'",
     )
     db.commit()
@@ -493,21 +490,3 @@ def delete_chat_history(
     db.commit()
 
     return {"detail": f"Chat history for session '{session_id}' has been deleted"}
-
-
-def create_audit_log(
-    db,
-    admin,
-    action,
-    details=None,
-    level="info",
-):
-    log = AuditLog(
-        user_id=admin.id if admin else None,
-        username=admin.username if admin else None,
-        level=level,
-        action=action,
-        details=details,
-    )
-
-    db.add(log)

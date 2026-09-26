@@ -1,14 +1,17 @@
 import csv
 import io
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_admin
+from app.core.audit import create_audit_log
 from app.models.system import SystemSetting, AuditLog
-from app.schemas.admin import UpdateSettingsRequest
+from app.schemas.admin import (
+    UpdateSettingsRequest,
+    CreateAuditLogRequest,
+)
 
 
 router = APIRouter()
@@ -17,26 +20,6 @@ router = APIRouter()
 # ============================================================
 # HELPERS
 # ============================================================
-
-def create_audit_log(
-    db: Session,
-    admin,
-    action: str,
-    details: str | None = None,
-    level: str = "info",
-):
-    log = AuditLog(
-        user_id=admin.id if admin else None,
-        username=admin.username if admin else None,
-        level=level,
-        action=action,
-        details=details,
-    )
-
-    db.add(log)
-
-    return log
-
 
 def serialize_setting(key: str, value: str):
     if key in {"maintenance_mode", "allow_user_registration"}:
@@ -293,32 +276,16 @@ def export_logs(
 
 @router.post("/logs")
 def create_log(
-    payload: dict,
+    payload: CreateAuditLogRequest,
     admin=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    level = payload.get("level", "info")
-
-    if level not in {"info", "warning", "error"}:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid log level",
-        )
-
-    action = payload.get("action")
-
-    if not action:
-        raise HTTPException(
-            status_code=400,
-            detail="Action is required",
-        )
-
     create_audit_log(
         db=db,
         admin=admin,
-        action=action,
-        details=payload.get("details"),
-        level=level,
+        action=payload.action,
+        details=payload.details,
+        level=payload.level,
     )
 
     db.commit()

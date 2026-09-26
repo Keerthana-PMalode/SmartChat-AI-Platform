@@ -425,6 +425,7 @@ PostgreSQL stores application data associated with:
 - File permissions
 - Share links
 - Audit logs
+- System settings
 
 PostgreSQL is not intended to be directly accessed by the browser.
 
@@ -569,6 +570,8 @@ Typical audited operations include:
 - DOWNLOAD
 
 Only successful file operations are recorded.
+
+The Auth Service also maintains administrative audit records in the `audit_logs` table. Administrative actions such as user creation, role changes, user deletion, and system-setting updates can create audit records containing the administrator identity, log level, action, optional details, and timestamp.
 
 ---
 
@@ -833,6 +836,8 @@ The Users section now supports client-side search, deterministic ID sorting, ten
 
 Navigation state is synchronized with the URL hash. On initialization the UI restores the section represented by the hash, and navigation changes are propagated through EventBus events.
 
+The Admin frontend now also supports `settings` and `logs` sections. Settings are loaded through `settings:load-requested` and managed through the Admin API. Logs are retrieved from the administrative logs API and rendered with filtering, search, pagination, refresh, and CSV download controls.
+
 ## 18. Administrative Dashboard Architecture
 
 The Admin Dashboard now provides a data-backed overview rather than a static
@@ -938,10 +943,38 @@ against the explicit allowed section set:
 - `users`
 - `chat-history`
 - `analytics`
+- `settings`
+- `logs`
 
 An invalid section is rejected rather than becoming the current section.
 
-## 21. Architectural Principles
+## 21. Administrative System Architecture
+
+The Auth Service now provides a small system-administration surface for
+application settings and administrative audit logs. The routes are mounted under the existing `/admin` router and require administrator authorization.
+
+```text
+Admin Browser
+     │
+     ├──► /admin/settings
+     │       │
+     │       └──► system_settings
+     │
+     └──► /admin/logs
+             │
+             └──► audit_logs
+```
+
+`system_settings` stores key/value configuration with an update timestamp. The current backend defaults are `application_name=ChatBot`,
+`max_message_length=5000`, `maintenance_mode=false`, and
+`allow_user_registration=true`. Settings updates are recorded as administrative audit events.
+
+`audit_logs` stores the administrator identity, log level, action, optional details, and timestamp. The Admin Logs UI retrieves these records with level filtering, search, pagination, and CSV export.
+
+The system administration routes are registered by `admin_system.py`, while
+`system.py` contains the SQLAlchemy models for both tables.
+
+## 22. Architectural Principles
 
 SmartChat follows these architectural principles:
 
