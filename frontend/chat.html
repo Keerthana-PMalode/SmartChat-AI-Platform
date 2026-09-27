@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ChatBot</title>
+    <title id="pageTitle">ChatBot</title>
     <link rel="stylesheet" href="css/chat.css" />
   </head>
   <body>
@@ -16,7 +16,7 @@
             alt="SmartChat AI Assistant"
           />
           <div class="header-info">
-            <h3>ChatBot</h3>
+            <h3 id="applicationName">ChatBot</h3>
             <div class="status">
               <span class="status-dot"></span>
               <span> Online </span>
@@ -42,7 +42,11 @@
         </div>
       </div>
       <footer class="chat-footer">
-        <input id="message" type="text" placeholder="Type your message..." />
+        <div class="message-input-wrapper">
+          <input id="message" type="text" placeholder="Type your message..." />
+          <span id="messageCounter" class="message-counter"> 0 / 5000 </span>
+        </div>
+
         <button id="sendBtn">➤</button>
       </footer>
     </div>

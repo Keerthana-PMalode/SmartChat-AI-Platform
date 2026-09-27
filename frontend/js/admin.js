@@ -23,10 +23,7 @@ import "./admin_ui.js";
 
 import "./settings.controller.js";
 
-import {
-  exportAnalytics,
-} from "./analytics.service.js";
-
+import { exportAnalytics } from "./analytics.service.js";
 
 /* =========================================================
    ADMIN AUTHORIZATION
@@ -233,7 +230,6 @@ EventBus.on("chat-history:view-requested", async (event) => {
   await fetchChatMessages(userId, chatId);
 });
 
-
 EventBus.on("analytics:export-requested", async () => {
   try {
     await exportAnalytics();
@@ -241,7 +237,6 @@ EventBus.on("analytics:export-requested", async () => {
     console.error("ADMIN: analytics export failed:", error);
   }
 });
-
 
 /* =========================================================
    APPLICATION NAVIGATION

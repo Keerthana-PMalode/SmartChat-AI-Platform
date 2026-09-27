@@ -3,16 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import Base, engine
 
-# Import models before create_all()
-from app.models.user import User
-from app.models.chat import ChatHistory, ChatMessage
-from app.models.system import SystemSetting, AuditLog
-
 from app.routes import chat
 from app.routes import admin_analytics
 from app.routes.admin import router as admin_router
 from app.routes.login import router as login_router
 from app.routes.token import router as token_router
+from app.routes.register import router as register_router
+
 
 from app.routes.admin_system import router as admin_system_router
 
@@ -35,6 +32,8 @@ def startup():
 
 app.include_router(login_router)
 app.include_router(token_router)
+app.include_router(register_router)
+
 app.include_router(chat.router, tags=["Chat"])
 app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 app.include_router(

@@ -981,7 +981,6 @@ exportChatButton?.addEventListener("click", (event) => {
   });
 });
 
-
 /* =========================================================
    CHAT HISTORY EXPORTED
 ========================================================= */
@@ -1000,12 +999,9 @@ EventBus.on("chat-history:exported", (event) => {
   exportChatButton.textContent =
     exportChatButton.dataset.originalText || "Export";
 
-  const message =
-    data.message || "Chat history exported successfully.";
+  const message = data.message || "Chat history exported successfully.";
 
-  const exportStatus = document.getElementById(
-    "chat-export-status",
-  );
+  const exportStatus = document.getElementById("chat-export-status");
 
   if (exportStatus) {
     exportStatus.textContent = message;
@@ -1016,7 +1012,6 @@ EventBus.on("chat-history:exported", (event) => {
     }, 3000);
   }
 });
-
 
 /* =========================================================
    CHAT HISTORY EXPORTING
@@ -1034,23 +1029,18 @@ EventBus.on("chat-history:exporting", (event) => {
   exportChatButton.disabled = true;
 
   if (!exportChatButton.dataset.originalText) {
-    exportChatButton.dataset.originalText =
-      exportChatButton.textContent;
+    exportChatButton.dataset.originalText = exportChatButton.textContent;
   }
 
   exportChatButton.textContent = "Exporting...";
 });
-
 
 /* =========================================================
    CHAT HISTORY EXPORT ERROR
 ========================================================= */
 
 EventBus.on("chat-history:export-error", (event) => {
-  console.error(
-    "UI: chat history export failed:",
-    event.detail?.error,
-  );
+  console.error("UI: chat history export failed:", event.detail?.error);
 
   if (!exportChatButton) {
     return;
@@ -1061,14 +1051,11 @@ EventBus.on("chat-history:export-error", (event) => {
   exportChatButton.textContent =
     exportChatButton.dataset.originalText || "Export";
 
-  const exportStatus = document.getElementById(
-    "chat-export-status",
-  );
+  const exportStatus = document.getElementById("chat-export-status");
 
   if (exportStatus) {
     exportStatus.textContent =
-      event.detail?.message ||
-      "Failed to export chat history.";
+      event.detail?.message || "Failed to export chat history.";
 
     exportStatus.classList.remove("hidden");
 
@@ -1077,7 +1064,6 @@ EventBus.on("chat-history:export-error", (event) => {
     }, 4000);
   }
 });
-
 
 /* =========================================================
    CHAT HISTORY SEARCH
@@ -1106,7 +1092,6 @@ function handleSearchSubmit() {
   });
 }
 
-
 /* =========================================================
    ANALYTICS EXPORT REQUESTED
 ========================================================= */
@@ -1126,7 +1111,6 @@ exportAnalyticsButton?.addEventListener("click", (event) => {
     format: "csv",
   });
 });
-
 
 /* =========================================================
    ANALYTICS EXPORTING
@@ -1151,7 +1135,6 @@ EventBus.on("analytics:exporting", (event) => {
   exportAnalyticsButton.textContent = "Exporting...";
 });
 
-
 /* =========================================================
    ANALYTICS EXPORTED
 ========================================================= */
@@ -1171,16 +1154,12 @@ EventBus.on("analytics:exported", (event) => {
     exportAnalyticsButton.dataset.originalText || "Export";
 });
 
-
 /* =========================================================
    ANALYTICS EXPORT ERROR
 ========================================================= */
 
 EventBus.on("analytics:export-error", (event) => {
-  console.error(
-    "UI: analytics export failed:",
-    event.detail?.error,
-  );
+  console.error("UI: analytics export failed:", event.detail?.error);
 
   if (!exportAnalyticsButton) {
     return;
@@ -1191,7 +1170,6 @@ EventBus.on("analytics:export-error", (event) => {
   exportAnalyticsButton.textContent =
     exportAnalyticsButton.dataset.originalText || "Export";
 });
-
 
 /* =========================================================
    SEARCH UI

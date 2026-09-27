@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Register</title>
+
+    <link rel="stylesheet" href="css/register.css" />
+  </head>
+
+  <body>
+    <main class="register-container">
+      <form id="register-form">
+        <h1>Create Account</h1>
+
+        <div
+          id="register-status"
+          class="register-status"
+          role="status"
+          aria-live="polite"
+          hidden
+        ></div>
+
+        <label for="register-username"> Username </label>
+
+        <input
+          id="register-username"
+          type="text"
+          required
+          autocomplete="username"
+        />
+
+        <label for="register-password"> Password </label>
+
+        <input
+          id="register-password"
+          type="password"
+          required
+          autocomplete="new-password"
+        />
+
+        <label for="register-password-confirm"> Confirm Password </label>
+
+        <input
+          id="register-password-confirm"
+          type="password"
+          required
+          autocomplete="new-password"
+        />
+
+        <button id="register-btn" type="submit">Register</button>
+
+        <a href="login.html"> Already have an account? Login </a>
+      </form>
+    </main>
+
+    <script type="module" src="js/register.js"></script>
+  </body>
+</html>

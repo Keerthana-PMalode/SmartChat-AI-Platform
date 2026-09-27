@@ -288,9 +288,7 @@ level. Search performs a case-insensitive match against the action, details, and
 
 ### GET /admin/logs/export
 
-Exports audit logs as CSV. The `level` and `search` filters use the same semantics
-as `GET /admin/logs`. The generated file is returned as `system_logs.csv` with
-columns `Timestamp`, `User`, `Level`, `Action`, and `Details`.
+Exports audit logs as CSV. The `level` and `search` filters use the same semantics as `GET /admin/logs`. The generated file is returned as `system_logs.csv` with columns `Timestamp`, `User`, `Level`, `Action`, and `Details`.
 
 ### POST /admin/logs
 

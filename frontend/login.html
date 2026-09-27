@@ -2,37 +2,94 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
     <title>Chatbot Login</title>
+
     <link rel="stylesheet" href="css/login.css" />
   </head>
+
   <body>
+    <!-- ============================================================
+         LOGIN CARD
+    ============================================================= -->
+
     <div class="login-card">
       <h2 id="title">
-        Welcome to
         <span>SmartChat AI Platform</span>
       </h2>
-      <!-- Role Selection -->
+
+      <!-- ========================================================
+           ROLE SELECTION
+      ========================================================= -->
+
       <div id="role-selection">
-        <button id="user-login-btn" class="login-btn">User Login</button>
-        <button id="admin-login-btn" class="login-btn">Admin Login</button>
+        <button id="user-login-btn" type="button" class="login-btn">
+          User Login
+        </button>
+
+        <button id="admin-login-btn" type="button" class="login-btn">
+          Admin Login
+        </button>
       </div>
-      <!-- Login Form -->
+
+      <!-- ========================================================
+           LOGIN FORM
+      ========================================================= -->
+
       <form id="login-form" class="hidden">
         <div class="form-group">
-          <input type="text" id="username" placeholder="Username" required />
+          <input
+            type="text"
+            id="username"
+            name="username"
+            placeholder="Username"
+            autocomplete="username"
+            required
+          />
         </div>
+
         <div class="form-group">
           <input
             type="password"
             id="password"
+            name="password"
             placeholder="Password"
+            autocomplete="current-password"
             required
           />
         </div>
+
         <button type="submit" class="login-btn">Login</button>
       </form>
-      <p id="error" class="error-message"></p>
+
+      <!-- ============================================================
+         REGISTRATION LINK
+         Hidden by default.
+         login.js will show it only when registration is enabled.
+    ============================================================= -->
+
+      <div
+        id="registration-link-container"
+        class="registration-link-container"
+        hidden
+      >
+        <span>New here?</span>
+
+        <a href="register.html"> Create an account </a>
+      </div>
+
+      <!-- ========================================================
+           LOGIN ERROR
+      ========================================================= -->
+
+      <p id="error" class="error-message" role="alert" aria-live="polite"></p>
     </div>
+
+    <!-- ============================================================
+         SCRIPTS
+    ============================================================= -->
+
     <script src="js/auth.js"></script>
     <script src="js/login.js"></script>
   </body>

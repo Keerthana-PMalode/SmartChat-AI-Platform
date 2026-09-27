@@ -1,33 +1,27 @@
 import { EventBus } from "./admin_events.js";
 
-import {
-  getSettings,
-  updateSettings,
-} from "./admin_api.js";
+import { getSettings, updateSettings } from "./admin_api.js";
 
 const settingsForm = document.getElementById("settings-form");
 const settingsStatus = document.getElementById("settings-status");
 
 const applicationNameInput = document.getElementById(
-  "setting-application-name"
+  "setting-application-name",
 );
 
 const maxMessageLengthInput = document.getElementById(
-  "setting-max-message-length"
+  "setting-max-message-length",
 );
 
 const maintenanceModeInput = document.getElementById(
-  "setting-maintenance-mode"
+  "setting-maintenance-mode",
 );
 
-const registrationInput = document.getElementById(
-  "setting-registration"
-);
+const registrationInput = document.getElementById("setting-registration");
 
 const saveButton = document.getElementById("settings-save-btn");
 const resetButton = document.getElementById("settings-reset-btn");
 const refreshButton = document.getElementById("settings-refresh-btn");
-
 
 /* ============================================================
    DEFAULT SETTINGS
@@ -41,13 +35,11 @@ const DEFAULT_SETTINGS = {
   allow_user_registration: true,
 };
 
-
 /* ============================================================
    LOCAL STATE
 ============================================================ */
 
 let originalSettings = null;
-
 
 /* ============================================================
    STATUS
@@ -59,12 +51,10 @@ function showSettingsStatus(message, type = "success") {
   settingsStatus.hidden = false;
 }
 
-
 function hideSettingsStatus() {
   settingsStatus.hidden = true;
   settingsStatus.textContent = "";
 }
-
 
 /* ============================================================
    POPULATE FORM
@@ -78,14 +68,12 @@ function populateSettings(settings) {
     settings.max_message_length ?? DEFAULT_SETTINGS.max_message_length;
 
   maintenanceModeInput.checked =
-    settings.maintenance_mode === true ||
-    settings.maintenance_mode === "true";
+    settings.maintenance_mode === true || settings.maintenance_mode === "true";
 
   registrationInput.checked =
     settings.allow_user_registration === true ||
     settings.allow_user_registration === "true";
 }
-
 
 /* ============================================================
    LOAD SAVED SETTINGS FROM BACKEND
@@ -104,20 +92,14 @@ async function loadSettings() {
     originalSettings = structuredClone(settings);
 
     populateSettings(settings);
-
   } catch (error) {
     console.error("Failed to load settings:", error);
 
-    showSettingsStatus(
-      "Failed to load settings.",
-      "error"
-    );
-
+    showSettingsStatus("Failed to load settings.", "error");
   } finally {
     refreshButton.disabled = false;
   }
 }
-
 
 /* ============================================================
    RESET FORM TO DEFAULTS
@@ -128,12 +110,8 @@ function resetSettings() {
 
   hideSettingsStatus();
 
-  console.log(
-    "SETTINGS RESET TO DEFAULTS:",
-    DEFAULT_SETTINGS
-  );
+  console.log("SETTINGS RESET TO DEFAULTS:", DEFAULT_SETTINGS);
 }
-
 
 /* ============================================================
    SAVE SETTINGS
@@ -146,30 +124,20 @@ async function saveSettings() {
     hideSettingsStatus();
 
     const payload = {
-      application_name:
-        applicationNameInput.value.trim(),
+      application_name: applicationNameInput.value.trim(),
 
-      max_message_length:
-        Number(maxMessageLengthInput.value),
+      max_message_length: Number(maxMessageLengthInput.value),
 
-      maintenance_mode:
-        maintenanceModeInput.checked,
+      maintenance_mode: maintenanceModeInput.checked,
 
-      allow_user_registration:
-        registrationInput.checked,
+      allow_user_registration: registrationInput.checked,
     };
 
-    console.log(
-      "SETTINGS UPDATE REQUEST:",
-      payload
-    );
+    console.log("SETTINGS UPDATE REQUEST:", payload);
 
     const response = await updateSettings(payload);
 
-    console.log(
-      "SETTINGS UPDATE RESPONSE:",
-      response
-    );
+    console.log("SETTINGS UPDATE RESPONSE:", response);
 
     /*
      * Update local saved state after successful API request.
@@ -180,25 +148,16 @@ async function saveSettings() {
       `Settings saved successfully. Updated: ${
         response.updated?.join(", ") || "none"
       }.`,
-      "success"
+      "success",
     );
-
   } catch (error) {
-    console.error(
-      "Failed to update settings:",
-      error
-    );
+    console.error("Failed to update settings:", error);
 
-    showSettingsStatus(
-      getSettingsErrorMessage(error),
-      "error"
-    );
-
+    showSettingsStatus(getSettingsErrorMessage(error), "error");
   } finally {
     saveButton.disabled = false;
   }
 }
-
 
 /* ============================================================
    ERROR MESSAGE
@@ -212,31 +171,18 @@ function getSettingsErrorMessage(error) {
   return "Failed to save settings.";
 }
 
-
 /* ============================================================
    EVENTS
 ============================================================ */
 
-settingsForm.addEventListener(
-  "submit",
-  (event) => {
-    event.preventDefault();
-    saveSettings();
-  }
-);
+settingsForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveSettings();
+});
 
+resetButton.addEventListener("click", resetSettings);
 
-resetButton.addEventListener(
-  "click",
-  resetSettings
-);
-
-
-refreshButton.addEventListener(
-  "click",
-  loadSettings
-);
-
+refreshButton.addEventListener("click", loadSettings);
 
 /* ============================================================
    SETTINGS NAVIGATION

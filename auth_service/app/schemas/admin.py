@@ -42,3 +42,8 @@ class UpdateSettingsRequest(BaseModel):
     maintenance_mode: bool | None = None
 
     allow_user_registration: bool | None = None
+
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str

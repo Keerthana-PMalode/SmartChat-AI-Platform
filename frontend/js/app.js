@@ -1,4 +1,4 @@
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   /* ================= AUTH CHECK ================= */
 
   const role = localStorage.getItem("role");
@@ -6,9 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (!token || role !== "user") {
     localStorage.clear();
-
     window.location.href = "login.html";
-
     return;
   }
 
@@ -18,6 +16,167 @@ document.addEventListener("DOMContentLoaded", () => {
   const typingIndicator = document.getElementById("typingIndicator");
   const logoutBtn = document.getElementById("logoutBtn");
   const filesBtn = document.getElementById("filesBtn");
+
+  const applicationName = document.getElementById("applicationName");
+  const pageTitle = document.getElementById("pageTitle");
+  const messageCounter = document.getElementById("messageCounter");
+
+  /* ================= DEFAULT SETTINGS ================= */
+
+  const DEFAULT_SETTINGS = {
+    application_name: "ChatBot",
+    max_message_length: 5000,
+    maintenance_mode: false,
+    allow_user_registration: true,
+  };
+
+  let appSettings = {
+    ...DEFAULT_SETTINGS,
+  };
+
+  /* ================= SETTINGS ================= */
+
+  async function loadSettings() {
+    try {
+      const response = await fetch("/auth/admin/settings/public");
+
+      if (!response.ok) {
+        throw new Error("Failed to load application settings");
+      }
+
+      const settings = await response.json();
+
+      appSettings = {
+        ...DEFAULT_SETTINGS,
+        ...settings,
+      };
+
+      applySettings();
+    } catch (error) {
+      console.error("Failed to load application settings:", error);
+
+      /*
+       * Keep the chatbot usable with safe defaults if
+       * settings cannot be loaded.
+       */
+      appSettings = {
+        ...DEFAULT_SETTINGS,
+      };
+
+      applySettings();
+    }
+  }
+
+  function applySettings() {
+    const name =
+      String(appSettings.application_name || "ChatBot").trim() || "ChatBot";
+
+    const maxLength = Number(appSettings.max_message_length);
+
+    appSettings.max_message_length =
+      Number.isInteger(maxLength) && maxLength > 0
+        ? maxLength
+        : DEFAULT_SETTINGS.max_message_length;
+
+    /* Application name */
+
+    if (applicationName) {
+      applicationName.textContent = name;
+    }
+
+    if (pageTitle) {
+      pageTitle.textContent = name;
+    }
+
+    document.title = name;
+
+    /* Maximum message length */
+
+    if (input) {
+      input.maxLength = appSettings.max_message_length;
+      input.placeholder = `Type your message...`;
+    }
+
+    updateMessageCounter();
+
+    /* Maintenance mode */
+
+    if (appSettings.maintenance_mode === true) {
+      enableMaintenanceMode();
+    } else {
+      disableMaintenanceMode();
+    }
+  }
+
+  /* ================= MAINTENANCE MODE ================= */
+
+  function enableMaintenanceMode() {
+    if (input) {
+      input.disabled = true;
+      input.placeholder = "Chatbot is currently under maintenance.";
+    }
+
+    if (button) {
+      button.disabled = true;
+    }
+
+    const existingNotice = document.getElementById("maintenanceNotice");
+
+    if (!existingNotice) {
+      const notice = document.createElement("div");
+
+      notice.id = "maintenanceNotice";
+      notice.className = "bot-message";
+
+      const bubble = document.createElement("div");
+
+      bubble.className = "bubble";
+      bubble.textContent =
+        "The chatbot is currently under maintenance. Please try again later.";
+
+      notice.appendChild(bubble);
+
+      chatBody.appendChild(notice);
+    }
+  }
+
+  function disableMaintenanceMode() {
+    if (input) {
+      input.disabled = false;
+      input.placeholder = "Type your message...";
+    }
+
+    if (button) {
+      button.disabled = false;
+    }
+
+    const notice = document.getElementById("maintenanceNotice");
+
+    if (notice) {
+      notice.remove();
+    }
+  }
+
+  /* ================= MESSAGE COUNTER ================= */
+
+  function updateMessageCounter() {
+    if (!messageCounter || !input) {
+      return;
+    }
+
+    const currentLength = input.value.length;
+    const maxLength = appSettings.max_message_length;
+
+    messageCounter.textContent = `${currentLength} / ${maxLength}`;
+
+    if (currentLength >= maxLength) {
+      messageCounter.classList.add("limit-reached");
+    } else {
+      messageCounter.classList.remove("limit-reached");
+    }
+  }
+
+  /* ================= EVENTS ================= */
 
   if (logoutBtn) {
     logoutBtn.addEventListener("click", logout);
@@ -34,8 +193,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (input) {
-    input.addEventListener("keypress", function (e) {
-      if (e.key === "Enter") {
+    input.addEventListener("input", updateMessageCounter);
+
+    input.addEventListener("keypress", function (event) {
+      if (event.key === "Enter") {
+        event.preventDefault();
         sendMessage();
       }
     });
@@ -58,15 +220,34 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= SEND MESSAGE ================= */
 
   async function sendMessage() {
+    if (appSettings.maintenance_mode === true) {
+      appendBot(
+        "The chatbot is currently under maintenance. Please try again later.",
+      );
+      return;
+    }
+
     const message = input.value.trim();
 
     if (message === "") {
       return;
     }
 
+    const maxLength = appSettings.max_message_length;
+
+    if (message.length > maxLength) {
+      appendBot(
+        `Your message is too long. Please keep it within ${maxLength} characters.`,
+      );
+
+      return;
+    }
+
     appendUser(message);
 
     input.value = "";
+
+    updateMessageCounter();
 
     showTyping();
 
@@ -76,7 +257,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         headers: {
           "Content-Type": "application/json",
-
           Authorization: "Bearer " + localStorage.getItem("authToken"),
         },
 
@@ -106,6 +286,7 @@ document.addEventListener("DOMContentLoaded", () => {
           }
 
           appendBot(msg.text);
+
           await fetch("/auth/chat/history", {
             method: "POST",
 
@@ -149,15 +330,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
     bubble.className = "bubble";
 
-    bubble.innerHTML = `
+    /*
+     * textContent is intentionally used instead of innerHTML
+     * so user input cannot inject HTML/JavaScript.
+     */
 
-            ${message}
+    const messageText = document.createElement("div");
 
-            <div class="timestamp">
-                ${getTime()}
-            </div>
+    messageText.textContent = message;
 
-        `;
+    const timestamp = document.createElement("div");
+
+    timestamp.className = "timestamp";
+    timestamp.textContent = getTime();
+
+    bubble.appendChild(messageText);
+    bubble.appendChild(timestamp);
 
     wrapper.appendChild(bubble);
 
@@ -189,12 +377,12 @@ document.addEventListener("DOMContentLoaded", () => {
   /* ================= TYPING ANIMATION ================= */
 
   async function simulateTyping(element, message) {
-    element.innerHTML = "";
+    element.textContent = "";
 
-    const words = message.split(" ");
+    const words = String(message).split(" ");
 
     for (let i = 0; i < words.length; i++) {
-      element.innerHTML += words[i] + " ";
+      element.textContent += words[i] + (i < words.length - 1 ? " " : "");
 
       scrollBottom();
 
@@ -203,13 +391,12 @@ document.addEventListener("DOMContentLoaded", () => {
       );
     }
 
-    element.innerHTML += `
+    const timestamp = document.createElement("div");
 
-            <div class="timestamp">
-                ${getTime()}
-            </div>
+    timestamp.className = "timestamp";
+    timestamp.textContent = getTime();
 
-        `;
+    element.appendChild(timestamp);
   }
 
   /* ================= SCROLL ================= */
@@ -224,22 +411,23 @@ document.addEventListener("DOMContentLoaded", () => {
     const now = new Date();
 
     let hours = now.getHours();
-
     let minutes = now.getMinutes();
 
     minutes = minutes < 10 ? "0" + minutes : minutes;
 
     return `${hours}:${minutes}`;
   }
+
+  /* ================= INITIALIZE ================= */
+
+  await loadSettings();
 });
 
 /* ================= LOGOUT ================= */
 
 function logout() {
   localStorage.removeItem("authToken");
-
   localStorage.removeItem("username");
-
   localStorage.removeItem("role");
 
   window.location.href = "login.html";

@@ -2,20 +2,20 @@ document.addEventListener("DOMContentLoaded", () => {
   console.log("Login JS loaded");
 
   /* =========================
-   STATE
-========================= */
+     STATE
+  ========================= */
 
   let selectedRole = "";
 
   /* =========================
-   API CONFIGURATION
-========================= */
+     API CONFIGURATION
+  ========================= */
 
   const API_BASE_URL = "/auth";
 
   /* =========================
-   DOM ELEMENTS
-========================= */
+     DOM ELEMENTS
+  ========================= */
 
   const title = document.getElementById("title");
 
@@ -30,8 +30,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const error = document.getElementById("error");
 
   /* =========================
-   ROLE SELECTION
-========================= */
+     LOAD REGISTRATION SETTING
+  ========================= */
+
+  loadRegistrationSetting();
+
+  /* =========================
+     ROLE SELECTION
+  ========================= */
 
   userBtn?.addEventListener("click", () => {
     selectedRole = "user";
@@ -54,8 +60,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   /* =========================
-   LOGIN
-========================= */
+     LOGIN
+  ========================= */
 
   loginForm?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -66,7 +72,7 @@ document.addEventListener("DOMContentLoaded", () => {
        FORM VALUES
     ========================= */
 
-    const username = document.getElementById("username").value;
+    const username = document.getElementById("username").value.trim();
 
     const password = document.getElementById("password").value;
 
@@ -135,3 +141,58 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+
+/* ============================================================
+   LOAD PUBLIC REGISTRATION SETTING
+============================================================ */
+
+async function loadRegistrationSetting() {
+  const container = document.getElementById("registration-link-container");
+
+  /*
+   * Safety check.
+   * If the element does not exist, there is nothing to update.
+   */
+
+  if (!container) {
+    console.warn("Registration link container not found.");
+
+    return;
+  }
+
+  /*
+   * Keep registration hidden until
+   * the backend confirms that it is enabled.
+   */
+
+  container.hidden = true;
+
+  try {
+    const response = await fetch("/auth/admin/settings/public");
+
+    if (!response.ok) {
+      throw new Error("Failed to load public settings");
+    }
+
+    const settings = await response.json();
+
+    console.log("Public settings:", settings);
+
+    /*
+     * Show registration link only when
+     * backend explicitly returns true.
+     */
+
+    container.hidden = settings.allow_user_registration !== true;
+  } catch (error) {
+    console.error("Failed to load registration setting:", error);
+
+    /*
+     * Fail closed:
+     * registration remains hidden if
+     * the settings request fails.
+     */
+
+    container.hidden = true;
+  }
+}

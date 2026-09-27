@@ -1,79 +1,77 @@
 body {
   margin: 0;
-
   height: 100vh;
-
   display: flex;
-
   justify-content: center;
-
   align-items: center;
-
   background: #ece5dd;
-
   font-family: Arial, sans-serif;
 }
-
 .login-card {
   width: 350px;
-
   background: white;
-
   padding: 30px;
-
   border-radius: 10px;
-
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
 }
-
 .login-card h2 {
   text-align: center;
-
   color: #075e54;
 }
-
 .login-card input {
   width: 100%;
-
   padding: 12px;
-
   margin-top: 15px;
-
   border: 1px solid #ccc;
-
   border-radius: 6px;
 }
-
 .login-card button {
   width: 100%;
-
   margin-top: 20px;
-
   padding: 12px;
-
   background: #128c7e;
-
   color: white;
-
   border: none;
-
   border-radius: 6px;
-
   cursor: pointer;
 }
-
 .login-card button:hover {
   background: #0c6d62;
 }
-
 #error {
   color: red;
-
   margin-top: 15px;
-
   text-align: center;
 }
-
 .hidden {
   display: none;
+}
+
+/* ================= REGISTRATION LINK ================= */
+
+#registration-link-container {
+  position: fixed;
+  bottom: 35px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 14px;
+  color: #666;
+  white-space: nowrap;
+}
+#registration-link-container a {
+  margin-left: 5px;
+  color: #128c7e;
+  font-weight: 600;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+#registration-link-container a:hover {
+  color: #0b6f64;
+  text-decoration: underline;
+}
+#registration-link-container a:focus-visible {
+  outline: 2px solid #128c7e;
+  outline-offset: 3px;
+  border-radius: 4px;
 }

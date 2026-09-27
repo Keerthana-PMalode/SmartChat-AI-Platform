@@ -42,6 +42,49 @@ DEFAULT_SETTINGS = {
     "allow_user_registration": "true",
 };    
 
+PUBLIC_SETTING_KEYS = {
+    "application_name",
+    "max_message_length",
+    "maintenance_mode",
+    "allow_user_registration",
+}
+
+
+# ============================================================
+# PUBLIC SETTINGS
+# ============================================================
+
+@router.get("/settings/public")
+def get_public_settings(
+    db: Session = Depends(get_db),
+):
+    settings = {}
+
+    rows = (
+        db.query(SystemSetting)
+        .filter(SystemSetting.key.in_(PUBLIC_SETTING_KEYS))
+        .all()
+    )
+
+    for row in rows:
+        settings[row.key] = serialize_setting(
+            row.key,
+            row.value,
+        )
+
+    for key, default_value in DEFAULT_SETTINGS.items():
+        if key not in settings:
+            settings[key] = serialize_setting(
+                key,
+                default_value,
+            )
+
+    return settings
+
+
+# ============================================================
+# SETTINGS
+# ============================================================
 
 @router.get("/settings")
 def get_settings(
