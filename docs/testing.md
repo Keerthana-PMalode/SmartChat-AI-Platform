@@ -22,7 +22,8 @@
 ## 20. Administrative Dashboard Testing
 ## 21. Administrative Analytics Testing
 ## 22. Administrative Settings and System Logs Testing
-## 23. Updated Verification Summary
+## 23. Public Registration and Chat Runtime Settings Testing
+## 24. Updated Verification Summary
 
 
 ## 4. Chat History Isolation Testing
@@ -1941,7 +1942,57 @@ and details. Verify Refresh, level filtering, search, pagination, and Download.
 
 ---
 
-## 23. Updated Verification Summary
+## 23. Public Registration and Chat Runtime Settings Testing
+
+### 23.1 Public Settings Endpoint
+
+Call:
+
+```http
+GET /admin/settings/public
+```
+
+Verify that the response is available without an administrator JWT and contains only `application_name`, `max_message_length`, `maintenance_mode`, and `allow_user_registration`. Remove one or more persisted settings and verify that backend defaults are returned.
+
+### 23.2 Registration Availability and Creation
+
+Set `allow_user_registration` to `true` and call:
+
+```http
+POST /register
+Content-Type: application/json
+```
+
+Verify that a new account is created with role `user` and that the password is stored through the existing password-hashing path rather than as plaintext. Repeat with an existing username and verify `409 Conflict`. Set the setting to `false` and verify `403 Forbidden`.
+
+### 23.3 Registration UI
+
+1. Open the login page with registration enabled and verify that **Create an account** is shown.
+2. Disable registration and verify that the link is hidden.
+3. Make the public-settings request fail and verify that the link remains hidden.
+4. Open the registration page and verify that the Register button is disabled when registration is unavailable.
+5. Enter different passwords and verify the client-side mismatch message without submitting.
+6. Register a valid user and verify the success message and form reset.
+
+### 23.4 Chat Application Settings
+
+Set a non-default `application_name` and `max_message_length`, then open the chatbot. Verify that the configured name is applied to the document title and chat header, the input `maxLength` matches the setting, and the character counter updates while typing.
+
+### 23.5 Chat Maintenance Mode
+
+Enable `maintenance_mode` and verify that the chat input and send button are disabled and a maintenance notice is shown. Also call the chat persistence endpoint as a normal user and verify `503 Service Unavailable`. Repeat with an administrator JWT and verify that the administrator is not blocked by this maintenance check.
+
+### 23.6 Maximum Message Length
+
+Configure a small test maximum and verify that the browser counter reflects the value. Attempt a message longer than the limit and verify the client-side rejection. Then call the persistence endpoint directly with an over-limit message and verify `400 Bad Request`. Confirm that a message at or below the configured limit is accepted when maintenance mode is disabled.
+
+### 23.7 Chat Message Rendering
+
+Submit a message containing HTML-like text such as `<b>test</b>` and verify that it is displayed as text rather than interpreted as HTML. Verify that chatbot typing output is also rendered as text and that timestamps remain present.
+
+---
+
+## 24. Updated Verification Summary
 
 The recent Git changes introduce the following verification targets in addition to the existing authentication, chat-isolation, file, sharing, audit, encryption, routing, database, and Docker tests:
 
@@ -1963,6 +2014,12 @@ The recent Git changes introduce the following verification targets in addition 
 | Dashboard UI | Summary cards, charts, recent users, and recent conversations |
 | Dashboard errors | Loading/error states handled without stale loading values |
 | Analytics API | Daily chat activity returns chats, users, and messages |
+| Public settings | Allowlisted settings and backend defaults returned without admin authorization |
+| Registration API | Registration gate, duplicate username handling, password hashing, and user role |
+| Registration UI | Public-setting visibility, availability failure handling, and password confirmation |
+| Chat settings | Application name, maximum message length, maintenance mode, and live counter |
+| Chat enforcement | Server-side maintenance and message-length validation |
+| Chat rendering | User and chatbot message text rendered without HTML interpretation |
 | Analytics loading | Analytics load triggered when Analytics section is selected |
 | Settings API/UI | Settings load, validation, reset, and save behavior |
 | System logs | Audit creation, filtering, search, pagination, and CSV export |

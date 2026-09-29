@@ -147,6 +147,8 @@ Its responsibilities include:
 
 After successful authentication, the Auth Service issues a JWT.
 
+Public registration is exposed separately through `POST /register`. Registration checks the `allow_user_registration` system setting before creating a normal `user` account. The browser checks `GET /admin/settings/public` before showing or enabling registration.
+
 Protected requests use:
 
 ```http
@@ -164,6 +166,8 @@ The JWT contains authentication information such as:
 A new UUID session ID is generated for every successful login and is included in both the JWT claims and the login response. Protected chat persistence derives the current session from the authenticated JWT rather than accepting a client-supplied session ID.
 
 The frontend stores the JWT using the authToken key in browser localStorage.
+
+The browser-facing application also reads a restricted public settings set through `GET /admin/settings/public`. Only `application_name`, `max_message_length`, `maintenance_mode`, and `allow_user_registration` are returned, with backend defaults used for missing values.
 
 The authorization flow is:
 
@@ -305,6 +309,8 @@ authorized chat history
 
 A user cannot access another user's chat history by supplying another user's
 session identifier.
+
+Before chat persistence, the Auth Service also checks `maintenance_mode` and `max_message_length`. When maintenance mode is enabled, non-admin users receive `503 Service Unavailable`; administrators are allowed to continue using the persistence endpoint. Messages longer than the configured maximum are rejected with `400 Bad Request`. The default maximum is 5000 characters when the setting is absent or invalid.
 
 ---
 
@@ -951,7 +957,7 @@ An invalid section is rejected rather than becoming the current section.
 ## 21. Administrative System Architecture
 
 The Auth Service now provides a small system-administration surface for
-application settings and administrative audit logs. The routes are mounted under the existing `/admin` router and require administrator authorization.
+application settings and administrative audit logs. The administrator-management routes are mounted under the existing `/admin` router and require administrator authorization; the public settings route is the explicit unauthenticated exception.
 
 ```text
 Admin Browser
@@ -973,6 +979,10 @@ Admin Browser
 
 The system administration routes are registered by `admin_system.py`, while
 `system.py` contains the SQLAlchemy models for both tables.
+
+The same router also exposes `GET /admin/settings/public` for browser-facing configuration. This route is intentionally outside administrator authorization and returns only the four allowlisted settings required by the login, registration, and chatbot pages.
+
+Public registration is implemented by `register.py`. It checks `allow_user_registration`, rejects disabled registration with `403`, rejects an existing username with `409`, hashes the submitted password, and creates the account with role `user`.
 
 ## 22. Architectural Principles
 

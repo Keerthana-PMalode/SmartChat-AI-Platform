@@ -84,7 +84,7 @@ encryption, authorization, and request flows, see Architecture.
 
 ## Authentication
 
-- User registration
+- User registration controlled by the public registration setting
 - User login
 - Password hashing
 - JWT token generation and validation
@@ -138,6 +138,10 @@ This provides administrators with a quick overview of recent system activity wit
 - Persistent chat history
 - Per-user chat-history isolation
 - Session-based conversation tracking
+- Configurable application name
+- Configurable maximum message length
+- Administrative maintenance mode
+- Runtime message-length counter in the chat UI
 
 SmartChat does not support guest or unauthenticated chatbot sessions.
 
@@ -187,7 +191,9 @@ SmartChat-AI-Platform/
 │   ├── app/
 │   │   ├── routes/
 │   │   │   ├── admin.py       # Admin dashboard and administration endpoints
-│   │   │   └── admin_analytics.py # Administrative analytics endpoints
+│   │   │   ├── admin_analytics.py # Administrative analytics endpoints
+│   │   │   ├── admin_system.py # Settings and administrative log endpoints
+│   │   │   └── register.py    # Public user registration endpoint
 │   │   └── models/
 │   │       └── system.py      # System settings and administrative audit logs
 │   └── scripts/
@@ -211,9 +217,12 @@ SmartChat-AI-Platform/
 │       ├── analytics.js        # Analytics functionality
 │       ├── analytics.controller.js
 │       ├── analytics.events.js
+│       ├── app.js              # User chat application and runtime settings
 │       ├── dashboard.js        # Dashboard initialization
 │       ├── dashboard.charts.js # Dashboard chart rendering
-│       └── dashboard.service.js # Dashboard API service
+│       ├── dashboard.service.js # Dashboard API service
+│       ├── login.js            # Login and registration-link behavior
+│       └── register.js         # User registration form behavior
 │
 ├── nginx/                     # Nginx reverse proxy configuration
 │
@@ -515,6 +524,12 @@ The admin dashboard provides application statistics, seven-day activity charts, 
 ## Admin Analytics
 
 ![Admin](docs/images/admin-analytics.png)
+
+---
+
+## Admin Settings
+
+![Admin](docs/images/admin-settings.png)
 
 ---
 

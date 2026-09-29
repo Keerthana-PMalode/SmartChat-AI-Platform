@@ -100,7 +100,7 @@ The authenticated user ID is included in the database filter, so a session ID be
 
 ## Administrative API
 
-All `/admin/*` endpoints require administrator authorization through `require_admin`.
+All administrator-management endpoints require administrator authorization through `require_admin`. The public settings endpoint below is intentionally unauthenticated because it exposes only the allowlisted settings needed by the login, registration, and chatbot pages.
 
 ### GET /admin/dashboard
 
@@ -209,6 +209,54 @@ This endpoint is intended for administrative retrieval and is distinct from the 
 ### DELETE /admin/chat/history/{session_id}
 
 Deletes chat-history records associated with the specified session. Associated messages are removed through the configured database relationship.
+
+### GET /admin/settings/public
+
+Returns the public application settings used by the browser-facing login, registration, and chatbot pages. The endpoint exposes only these keys:
+
+- `application_name`
+- `max_message_length`
+- `maintenance_mode`
+- `allow_user_registration`
+
+Missing persisted values are filled from the backend defaults. The response is not administrator-protected.
+
+```json
+{
+  "application_name": "ChatBot",
+  "max_message_length": 5000,
+  "maintenance_mode": false,
+  "allow_user_registration": true
+}
+```
+
+### POST /register
+
+Creates a normal user account when public registration is enabled. The request contains `username` and `password`; the password is hashed before storage and the new account is assigned the `user` role.
+
+**Request**
+
+```json
+{
+  "username": "new_user",
+  "password": "<password>"
+}
+```
+
+**Successful response**
+
+```json
+{
+  "status": "success",
+  "message": "Registration successful."
+}
+```
+
+**Failures**
+
+- `403 Forbidden` when `allow_user_registration` is disabled.
+- `409 Conflict` when the username already exists.
+- FastAPI validation errors when the request body does not satisfy `RegisterRequest`.
 
 ### GET /admin/settings
 
@@ -490,3 +538,5 @@ The client exposes `get`, `post`, `put`, `patch`, and `delete` helpers.
 - Administrative chat discovery and message retrieval are separate endpoints.
 - Administrative endpoints require an administrator role.
 - Share-link file access remains intentionally unauthenticated and is outside the Auth Service chat API changes documented here.
+- `GET /admin/settings/public` is intentionally unauthenticated but returns only the allowlisted public settings.
+- Chat persistence enforces `maintenance_mode` and `max_message_length` on the server. During maintenance, non-admin users receive `503`; messages exceeding the configured maximum receive `400`.

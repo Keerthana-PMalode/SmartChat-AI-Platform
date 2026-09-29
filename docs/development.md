@@ -394,6 +394,30 @@ committed to source control or shared in logs, screenshots, or documentation.
 
 ---
 
+### Public Registration Development
+
+Public registration is implemented by `auth_service/app/routes/register.py` and is exposed through the Nginx `/auth` prefix as `POST /auth/register`. The route:
+
+1. Reads `allow_user_registration` from `system_settings`.
+2. Defaults to enabled when the setting is absent.
+3. Returns `403` when registration is disabled.
+4. Rejects an existing username with `409`.
+5. Hashes the submitted password and creates the account with role `user`.
+
+The login page requests `GET /auth/admin/settings/public` and keeps the registration link hidden unless `allow_user_registration` is explicitly `true`. If the request fails, the link remains hidden. The registration page performs the same availability check and disables the Register button when registration cannot be confirmed as enabled. It also checks that the password and confirmation match before submitting.
+
+### Chat Runtime Settings Development
+
+The authenticated chat persistence endpoint reads two system settings before storing a message:
+
+- `maintenance_mode`: when enabled, non-admin users receive `503 Service Unavailable`; administrators are allowed through.
+- `max_message_length`: user-submitted chat messages longer than the configured integer limit receive `400 Bad Request`. The limit applies to the incoming user message and does not restrict the length of the chatbot/Rasa response.
+If the stored value is missing or invalid, the backend uses `5000`.
+
+The browser chat page applies the configured `maxLength` to the user input field, displays a live character counter, and prevents sending input that exceeds the configured limit. The backend remains the authoritative enforcement point.
+
+The chat renderer now uses DOM `textContent` for user message content and typing output rather than inserting message text with `innerHTML`.
+
 ## File Service Development
 
 Uploaded files are stored in the File Service runtime storage directory:
