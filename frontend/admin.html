@@ -508,7 +508,7 @@
                 class="analytics-button analytics-button-secondary"
                 type="button"
               >
-                Export CSV
+                Export
               </button>
             </div>
             <!-- Error -->
@@ -770,89 +770,120 @@
         </section>
 
         <!-- Logs -->
-        <section id="logs-section" class="content-section content-panel" hidden>
-          <div class="section-card">
-            <div class="section-header">
-              <div>
-                <h2>System Logs</h2>
-                <p class="logs-description">
-                  Review administrative and application activity.
-                </p>
-              </div>
+        <section id="logs-section" class="content-section" hidden>
+          <div class="section-header">
+            <div>
+              <h2>System Logs</h2>
 
-              <div class="section-actions">
-                <button
-                  class="secondary-btn"
-                  id="refresh-logs-btn"
-                  type="button"
-                >
-                  <i class="fas fa-sync-alt"></i>
-                  Refresh
-                </button>
-
-                <button
-                  class="primary-btn"
-                  id="download-logs-btn"
-                  type="button"
-                >
-                  <i class="fas fa-download"></i>
-                  Download
-                </button>
-              </div>
+              <p id="logs-count">Showing 0 logs</p>
             </div>
 
-            <div class="section-toolbar logs-toolbar">
-              <select id="log-level-filter">
-                <option value="all">All Levels</option>
+            <div class="section-actions logs-actions">
+              <!-- Refresh -->
+              <button
+                type="button"
+                id="refresh-logs-btn"
+                class="logs-action-btn logs-refresh-btn"
+              >
+                <i
+                  class="fas fa-sync-alt logs-action-icon"
+                  aria-hidden="true"
+                ></i>
+                <span class="logs-action-text">Refresh</span>
+              </button>
 
-                <option value="info">Info</option>
-
-                <option value="warning">Warning</option>
-
-                <option value="error">Error</option>
-              </select>
-
-              <div class="search-box">
-                <input
-                  type="text"
-                  id="log-search"
-                  placeholder="Search logs..."
-                  autocomplete="off"
-                />
-
-                <button
-                  id="log-search-btn"
-                  type="button"
-                  aria-label="Search logs"
-                  title="Search"
-                >
-                  <i class="fas fa-search"></i>
-                </button>
-              </div>
-            </div>
-
-            <div class="table-wrapper">
-              <table class="logs-table">
-                <thead>
-                  <tr>
-                    <th>Timestamp</th>
-                    <th>User</th>
-                    <th>Level</th>
-                    <th>Action</th>
-                    <th>Details</th>
-                  </tr>
-                </thead>
-
-                <tbody id="logs-tbody"></tbody>
-              </table>
-            </div>
-
-            <div class="section-footer">
-              <span id="logs-summary"> Loading logs... </span>
-
-              <div id="logs-pagination" class="pagination"></div>
+              <!-- Export -->
+              <button
+                type="button"
+                id="logs-export-btn"
+                class="logs-action-btn logs-export-btn"
+              >
+                <i
+                  class="fas fa-download logs-action-icon"
+                  aria-hidden="true"
+                ></i>
+                <span class="logs-action-text">Export</span>
+              </button>
             </div>
           </div>
+
+          <!-- =====================================================
+            LOG FILTERS
+            ====================================================== -->
+
+          <div class="logs-filters">
+            <div class="search-group">
+              <input
+                type="search"
+                id="logs-search"
+                placeholder="Search logs..."
+                autocomplete="off"
+              />
+
+              <button type="button" id="logs-search-btn">
+                <i class="fas fa-search" aria-hidden="true"></i>
+                Search
+              </button>
+
+              <button type="button" id="logs-clear-search-btn" class="hidden">
+                Clear
+              </button>
+            </div>
+
+            <div class="filter-group">
+              <label for="logs-level-filter"> Level </label>
+
+              <select id="logs-level-filter">
+                <option value="all">All</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- =====================================================
+            EXPORT STATUS
+          ====================================================== -->
+
+          <div
+            id="logs-export-status"
+            class="hidden"
+            role="status"
+            aria-live="polite"
+          ></div>
+
+          <!-- =====================================================
+            LOG TABLE
+          ====================================================== -->
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>User</th>
+                  <th>Level</th>
+                  <th>Action</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+
+              <tbody id="logs-tbody">
+                <tr>
+                  <td colspan="5" style="text-align: center">
+                    Loading logs...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- =====================================================
+            PAGINATION
+          ====================================================== -->
+
+          <div id="logs-pagination" class="pagination"></div>
         </section>
       </main>
     </div>

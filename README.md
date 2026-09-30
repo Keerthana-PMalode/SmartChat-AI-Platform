@@ -533,6 +533,12 @@ The admin dashboard provides application statistics, seven-day activity charts, 
 
 ---
 
+## Admin Logs
+
+![Admin](docs/images/admin-logs.png)
+
+---
+
 ## File Manager
 
 ![Files](docs/images/file-management.png)

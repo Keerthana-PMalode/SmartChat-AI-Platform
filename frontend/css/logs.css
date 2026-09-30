@@ -106,3 +106,292 @@
     text-align: center;
     color: #6b7280;
 }
+/* ============================================================
+   ADMIN LOGS
+   ============================================================ */
+
+.logs-description {
+  margin-top: 5px;
+  color: var(--text-light);
+  font-size: 14px;
+}
+
+.logs-container {
+  width: 100%;
+}
+
+/* ============================================================
+   LOG HEADER ACTIONS
+   ============================================================ */
+
+.logs-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ============================================================
+   LOG ACTION BUTTONS
+   ============================================================ */
+
+.logs-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  min-width: 110px;
+  height: 40px;
+
+  padding: 0 14px;
+
+  border: 1px solid transparent;
+  border-radius: 6px;
+
+  font-size: 14px;
+  font-weight: 500;
+
+  cursor: pointer;
+
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.1s ease;
+}
+
+.logs-action-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.logs-action-btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   REFRESH BUTTON
+   ============================================================ */
+
+.logs-refresh-btn {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.logs-refresh-btn:hover:not(:disabled) {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+}
+
+/* ============================================================
+   EXPORT BUTTON
+   ============================================================ */
+
+.logs-export-btn {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.logs-export-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+/* ============================================================
+   BUTTON ICON
+   ============================================================ */
+
+.logs-action-icon {
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   DISABLED / BUSY STATE
+   ============================================================ */
+
+.logs-action-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.logs-action-btn:disabled .logs-action-icon {
+  opacity: 0.85;
+}
+
+/* ============================================================
+   EXPORTING STATE
+   ============================================================ */
+
+.logs-export-btn.is-exporting {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  cursor: wait;
+}
+
+.logs-export-btn.is-exporting .logs-action-icon {
+  animation: logs-spin 1s linear infinite;
+}
+
+/* ============================================================
+   REFRESHING STATE
+   ============================================================ */
+
+.logs-refresh-btn.is-refreshing {
+  cursor: wait;
+}
+
+.logs-refresh-btn.is-refreshing .logs-action-icon {
+  animation: logs-spin 1s linear infinite;
+}
+
+/* ============================================================
+   ICON ANIMATION
+   ============================================================ */
+
+@keyframes logs-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ============================================================
+   LOG TOOLBAR
+   ============================================================ */
+
+.logs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.logs-search {
+  flex: 1;
+  min-width: 240px;
+}
+
+.logs-search input,
+.logs-filter select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+}
+
+.logs-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.logs-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.logs-table th,
+.logs-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.logs-table th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #374151;
+}
+
+.logs-table td {
+  color: #4b5563;
+}
+
+.log-level {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.log-level.info {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.log-level.success {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.log-level.warning {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.log-level.error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.log-level.critical {
+  background: #7f1d1d;
+  color: #fff;
+}
+
+.log-message {
+  max-width: 500px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.logs-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  gap: 10px;
+}
+
+.logs-empty {
+  padding: 40px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.logs-loading {
+  padding: 30px;
+  text-align: center;
+  color: #6b7280;
+}
+
+/* ============================================================
+   RESPONSIVE LOG ACTIONS
+   ============================================================ */
+
+@media (max-width: 640px) {
+  .logs-actions {
+    width: 100%;
+  }
+
+  .logs-action-btn {
+    flex: 1;
+  }
+}

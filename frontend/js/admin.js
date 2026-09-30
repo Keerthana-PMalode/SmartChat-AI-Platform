@@ -23,6 +23,8 @@ import "./admin_ui.js";
 
 import "./settings.controller.js";
 
+import "./logs.js";
+
 import { exportAnalytics } from "./analytics.service.js";
 
 /* =========================================================
@@ -331,8 +333,14 @@ function handleNavigationRequest(section) {
      LOAD LOGS SECTION
   ------------------------------------------------------- */
 
+  /* -------------------------------------------------------
+   LOAD LOGS SECTION
+------------------------------------------------------- */
+
   if (section === "logs") {
     console.log("LOGS SECTION SELECTED");
+
+    EventBus.emit("logs:load-requested");
   }
 }
 

@@ -223,3 +223,115 @@ export async function getSettings() {
 export async function updateSettings(payload) {
   return api.put("/admin/settings", payload);
 }
+
+/* =========================
+ADMIN LOGS API
+========================= */
+
+/**
+ * Fetch system audit logs.
+ *
+ * @param {Object} params
+ * @param {number} params.page
+ * @param {number} params.pageSize
+ * @param {string} params.level
+ * @param {string} params.search
+ */
+export async function getLogs({
+  page = 1,
+  pageSize = 50,
+  level = "all",
+  search = "",
+} = {}) {
+  const query = new URLSearchParams();
+
+  query.set("page", String(page));
+  query.set("page_size", String(pageSize));
+
+  if (level && level.toLowerCase() !== "all") {
+    query.set("level", level.toLowerCase());
+  }
+
+  if (search && search.trim()) {
+    query.set("search", search.trim());
+  }
+
+  return api.get(`/admin/logs?${query.toString()}`);
+}
+
+/**
+ * Export system audit logs as CSV.
+ *
+ * This cannot use api.get() because the response
+ * is a CSV file rather than JSON.
+ */
+export async function exportLogs({ level = "all", search = "" } = {}) {
+  const query = new URLSearchParams();
+
+  if (level && level.toLowerCase() !== "all") {
+    query.set("level", level.toLowerCase());
+  }
+
+  if (search && search.trim()) {
+    query.set("search", search.trim());
+  }
+
+  const token = getToken();
+
+  const url = `${API_CONFIG.BASE_URL}/admin/logs/export?${query.toString()}`;
+
+  const controller = new AbortController();
+
+  const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT);
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+
+      headers: {
+        ...(token && {
+          Authorization: `Bearer ${token}`,
+        }),
+      },
+
+      signal: controller.signal,
+    });
+
+    if (response.status === 401) {
+      clearToken();
+
+      window.location.href = "/login.html";
+
+      const error = new Error("Unauthorized");
+
+      error.status = 401;
+
+      throw error;
+    }
+
+    if (!response.ok) {
+      let errorData = null;
+
+      try {
+        errorData = await response.json();
+      } catch {
+        // Response was not JSON.
+      }
+
+      const error = new Error(
+        errorData?.detail
+          ? formatApiError(errorData.detail)
+          : `API request failed with status ${response.status}`,
+      );
+
+      error.status = response.status;
+      error.data = errorData;
+
+      throw error;
+    }
+
+    return await response.blob();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
