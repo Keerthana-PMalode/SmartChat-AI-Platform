@@ -1,1674 +1,299 @@
-# Development Notes
+# SmartChat AI Platform — Development Guide
 
-This document contains development and troubleshooting commands for the
-SmartChat AI Platform. The application is designed to run using Docker
-Compose, with Nginx serving as the normal browser-facing entry point.
+This guide describes how to work on the current multi-service application while preserving its service boundaries. It is based on the supplied source tree and existing documentation. The supplied ZIP did not include the root `README.md`, `docker-compose.yml`, or `.env.example`; Compose names/ports and environment variable notes below therefore also use previously supplied project context and should be checked against the working checkout before changing deployment configuration.
 
-## Development Environment
+## 1. System at a glance
 
-SmartChat AI Platform runs as a set of Docker Compose services.
+SmartChat is a browser-based chatbot platform with authentication, persistent chat history, administration, analytics, and encrypted file management.
 
-The normal browser-facing application URL is:
+- **Nginx** serves the static frontend and reverse-proxies `/auth/`, `/rasa/`, and `/files/`.
+- **Auth Service** is a FastAPI application responsible for registration, login/JWT creation, user/role management, chat-history persistence, public/admin system settings, analytics, and administrative audit logs.
+- **File Service** is a separate FastAPI application responsible for upload, encryption, storage, file listing/deletion, downloads, direct permissions, share links, and file-access audit records.
+- **Rasa** runs the conversational/NLU server and uses `rasa_sdk` for custom actions.
+- **Rasa SDK** contains custom action logic and database/auth integration used by those actions.
+- **PostgreSQL** stores user, system-setting, conversation/message, file metadata, encryption-key, permission, shared-link, and audit records according to the application schemas/migrations.
 
-```http
-http://localhost:8081
+The frontend is primarily static HTML and JavaScript. Browser requests use Nginx-relative routes so the browser can use a single origin. Do not bypass a service's authorization checks by implementing data access directly in frontend code.
+
+## 2. Prerequisites and setup
+
+Use the versions pinned by the project's Dockerfiles and dependency files. At minimum, development requires:
+
+- Git;
+- Docker Engine/Desktop with the Docker Compose plugin;
+- a browser with developer tools;
+- a text editor/IDE;
+- optionally Python and Node/browser tooling for focused local work, if needed by a particular change. The project is configured for containerized services; do not assume the full stack runs natively without Docker.
+
+Clone or open the repository and inspect the actual root files before editing:
+
+```bash
+git status --short
+git branch --show-current
 ```
 
----
+Review `docker-compose.yml`, `.env.example`, service Dockerfiles, requirements files, and the relevant documentation. Do not commit `.env` files, real passwords, signing keys, JWT secrets, or file-encryption master keys.
 
-## Development Service URLs
-
-The following services expose host ports for development and troubleshooting:
-
-| Service      | Browser / Host URL | Purpose |
-|--------------|--------------------|-------------------------|
-| Frontend     | http://localhost:8081 | Browser-facing application |
-| Auth Service | http://localhost:8081/auth/ | Authentication and user APIs |
-| File Service | http://localhost:8081/files/ | File management APIs |
-| Rasa         | http://localhost:8081/rasa/ | Conversational AI API |
-| PostgreSQL   | Not browser-accessible | Database access |
-
-Normal browser application traffic should go through Nginx at
-http://localhost:8081.
-
-The backend services communicate internally using Docker Compose service
-names:
+## 3. Repository map
 
 ```text
-auth:8000
-file_service:8001
-rasa:5006
-rasa_sdk:5055
-postgres:5432
+auth_service/
+  app/
+    core/       # auth, database, dependencies, audit
+    models/     # user, chat, system models
+    routes/     # login, registration, token, chat, admin, analytics, settings/logs
+    schemas/    # request and response validation
+  scripts/      # database/user initialization helpers
+file_service/
+  app/
+    api/        # upload, file listing/deletion, download, sharing
+    core/       # config, database, dependencies, encryption, storage
+    models/     # files, encryption keys, permissions, shared links, audits
+    schemas/    # file and shared-link request/response models
+    services/   # file operations and audit persistence
+  alembic/      # migration environment and version history
+  scripts/      # encryption-key migration utilities
+frontend/
+  *.html        # login, registration, chat, files, admin pages
+  js/           # page entry points and feature modules
+  js/files/     # file API and upload helpers
+rasa/
+  config.yml, domain.yml, data/, endpoints.yml, credentials.yml, tests/
+rasa_sdk/actions/
+  # custom actions and auth/database helpers
+nginx/          # reverse-proxy configuration and image
+postgres/       # schema, initialization, and seed SQL
+scripts/        # build/start/stop/backup helper scripts
+docs/           # architecture, deployment, API, testing, troubleshooting
 ```
 
----
+Avoid modifying `.venv` or generated/cache files as part of normal source changes. The supplied archive includes a local virtual environment under `file_service/.venv`; it is not the canonical dependency manifest. Use `file_service/requirements.txt` and its Dockerfile for reproducible service dependencies.
 
-## Start the Application
+## 4. Docker-based development workflow
 
-Build the Docker images and start all services:
+Use the repository's Compose file as the authoritative orchestration contract. In the previously documented configuration, services are named `nginx`, `auth`, `file_service`, `rasa`, `rasa_sdk`, and `postgres`, connected on `chatbot_network`. Nginx serves the app on host port `8081`; direct service ports have been documented as Auth `8000`, File Service `8001`, Rasa `5006`, Rasa SDK `5055`, and PostgreSQL `5432`. Confirm the checked-out Compose file before relying on these mappings.
 
-```bash
-docker compose up --build
-```
-
-To run the services in detached mode:
+Typical workflow, if supported by the current Compose file:
 
 ```bash
+docker compose config
 docker compose up --build -d
+docker compose ps
+docker compose logs -f auth file_service rasa rasa_sdk nginx postgres
 ```
 
----
+Use the browser-facing entry point `http://localhost:8081/` (login page is `/login.html`) when running the documented local stack. Direct FastAPI docs may be available at `http://localhost:8000/docs` and `http://localhost:8001/docs` if those ports are published. Do not assume those direct ports should be exposed in production.
 
-## Stop the Application
+`depends_on` orders container startup but does not by itself guarantee that PostgreSQL or another dependency is ready to accept requests. When debugging first boot, inspect the database and dependent service logs instead of assuming startup order means readiness.
 
-Stop and remove the running containers:
+To stop containers without deleting persisted data:
 
 ```bash
 docker compose down
 ```
-Docker volumes are not removed by this command.
 
----
+Avoid `docker compose down -v` during normal development because it removes Compose-managed volumes and can destroy database/model data.
 
-## View Running Containers
+## 5. Environment configuration and secrets
 
-Check the status of the Docker Compose services:
+Use `.env.example` as a template if present in the working checkout; the uploaded archive did not include it. Previously supplied configuration identifies these important values:
+
+- `DATABASE_URL`: SQLAlchemy connection URL; in Compose, the hostname should be the service name `postgres`, not `localhost`.
+- `SECRET_KEY`: signing/verification secret used for JWTs by Auth Service and File Service. The services must use the same value for a token issued by Auth Service to be accepted by File Service.
+- `FILE_MASTER_KEY`: Fernet-compatible key used to wrap/unwrap per-file encryption keys. The source raises an error if this value is absent.
+- PostgreSQL variables such as `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, plus `POSTGRES_HOST` and `POSTGRES_PORT` where consumed by a service.
+
+For local work, create the expected `.env` from the actual template and use unique development-only secrets. Never use the source defaults (`SECRET_KEY` falls back to `secret` in the current Python source) as a production secret. Keep `FILE_MASTER_KEY` stable and backed up: losing it can make stored files undecryptable. Rotating it requires a planned key migration, not just changing the environment variable.
+
+If a variable appears unused, inspect its call sites before removing it. The File Service `core/config.py` currently reads `DATABASE_URL` with a local fallback; encryption reads `FILE_MASTER_KEY` directly from the environment. Auth JWT logic reads `SECRET_KEY` directly.
+
+## 6. Backend development
+
+### Auth Service
+
+Start with `auth_service/app/main.py` to understand router registration. The app uses FastAPI and SQLAlchemy. Important modules:
+
+- `app/core/auth.py`: password hashing and JWT creation/verification;
+- `app/core/dependencies.py`: database sessions, current-user/current-session resolution, and `require_admin`;
+- `app/core/audit.py`: administrative audit log creation;
+- `app/models/user.py`, `chat.py`, `system.py`: ORM models;
+- `app/schemas/auth.py`, `admin.py`, `chat.py`: request/response validation;
+- `app/routes/login.py`, `register.py`, `token.py`, `chat.py`: authentication and user chat flow;
+- `app/routes/admin.py`: user management, dashboard, administrative chat retrieval/deletion;
+- `app/routes/admin_analytics.py`: date-scoped analytics;
+- `app/routes/admin_system.py`: public/admin settings and audit logs.
+
+**Authentication contract:** login generates a new UUID session ID and returns it alongside the JWT. The JWT includes user ID, username (`sub`), role, session ID, and a 60-minute expiration. Protected routes should use the shared dependencies rather than reimplementing token parsing. Admin-only routes must use `require_admin`.
+
+**Chat persistence contract:** user identity and session are derived from the token. `POST /chat/history` validates maintenance mode and configured message length, finds the conversation by both user ID and session ID, and persists the user message plus the optional chatbot response. `GET /chat/history` returns only the authenticated user's current token session. Do not reintroduce client-supplied identity/session fields.
+
+**Settings contract:** defaults are defined in `admin_system.py`; public settings are filtered through `PUBLIC_SETTING_KEYS`. Add any new setting deliberately: decide whether it is public, define its type/default/validation, update the admin schema/UI, and test its runtime effect. Do not expose the entire settings table through the public endpoint.
+
+**Audit contract:** administrative settings changes and user-management actions create audit records. Add audit events for sensitive new admin actions, but avoid writing passwords, JWTs, encryption keys, or other secrets into audit details.
+
+### File Service
+
+Use the service's layers rather than adding all behavior to a route:
+
+- `app/api/upload.py`: multipart upload and 100 MiB application-level size check;
+- `app/api/files.py`: authenticated file listing and deletion;
+- `app/api/download.py`: owner/READ permission checks, encrypted-object retrieval, decryption, and authenticated download auditing;
+- `app/api/sharing.py`: direct user sharing, share-link creation, and token-based download;
+- `app/core/encryption.py`: Fernet file encryption and encryption-key wrapping with `FILE_MASTER_KEY`;
+- `app/core/storage.py`: storage-related helpers;
+- `app/core/dependencies.py`: JWT validation and user ID extraction;
+- `app/services/file_service.py`: file operations;
+- `app/services/audit_service.py`: file access audit records;
+- `app/models/`: file metadata, wrapped encryption keys, permissions, shared links, and audit rows.
+
+Uploaded content is encrypted before being stored. The database stores metadata and an encrypted/wrapped per-file key; encrypted file bytes are stored separately on disk. Keep the database and storage directory consistent during backup/restore. Never log plaintext file contents or keys. Permission changes should be tested against both direct downloads and share-link access.
+
+### Rasa and custom actions
+
+Rasa configuration and training data live under `rasa/`: `config.yml`, `domain.yml`, `data/nlu.yml`, `data/rules.yml`, `data/stories.yml`, `endpoints.yml`, and `tests/test_stories.yml`. Custom actions are in `rasa_sdk/actions/`:
+
+- `actions.py`: action implementations;
+- `auth.py` and `auth_utils.py`: authentication-related action helpers;
+- `database.py`: database access helpers;
+- `utils.py`: shared helpers.
+
+Keep Rasa dialogue/NLU definitions separate from backend persistence and authorization. When an action needs user/session context or database access, inspect existing helper behavior and pass only the necessary values. Update stories/tests when changing intents, entities, rules, forms, or action sequencing. The SDK endpoint and action server must agree with the service name/port in `rasa/endpoints.yml` and Compose.
+
+## 7. PostgreSQL and schema changes
+
+`postgres/init.sql` and `postgres/seed.sql` are initialization scripts for a new/empty PostgreSQL data directory in the documented Docker setup. They are not a general migration mechanism: PostgreSQL's image runs init scripts only on first initialization. Editing them will not update an already initialized persistent volume.
+
+The Auth Service currently calls `Base.metadata.create_all(bind=engine)` at startup. File Service schema evolution is managed through Alembic under `file_service/alembic/`. Migration files include baseline/current schema work and later revisions for normalized chat history, chat messages, encryption keys, access-audit invariants, share-link auditing, and user deletion cascades.
+
+Use the File Service container's environment and working directory when invoking Alembic. The documented migration command is:
+
+```bash
+docker compose exec file_service alembic upgrade head
+docker compose exec file_service alembic current
+```
+
+Before creating a migration:
+
+1. Update the relevant ORM model/schema.
+2. Generate or write a migration using the project's installed Alembic tooling.
+3. Review generated SQL and constraints manually.
+4. Test upgrade on a disposable database and on a copy of representative data.
+5. Verify downgrade behavior if the migration supports it; do not assume every data migration is reversible.
+6. Update tests and documentation for new columns/relationships/constraints.
+
+Do not use `create_all()` as a substitute for an existing production migration history. Before changing initialization SQL or migration files, understand which database is being targeted and take a backup.
+
+## 8. Frontend architecture
+
+Frontend pages are static HTML and feature-oriented JavaScript modules. Nginx serves `frontend/` and routes API calls to backend services. Keep rendering, state, event coordination, and network access separated where the existing modules already do so.
+
+### Authentication and user pages
+
+- `auth.js`: shared browser authentication/token behavior;
+- `login.js`, `register.js`: login and registration flows;
+- `app.js`: primary chat application entry/orchestration;
+- `chat.service.js`: chat API and chatbot interaction;
+- `chat_history.service.js`: persisted history retrieval/presentation support;
+- `users.service.js`: user-related API access;
+- `settings.controller.js`: public/admin settings interaction according to page use;
+- `modal_manager.js`: modal lifecycle helpers.
+
+The browser stores the JWT under `localStorage` key `authToken` in the documented implementation; the role and username are also stored for UI behavior. Browser-side role checks are for presentation only. The backend remains the authorization boundary.
+
+### Admin module architecture
+
+- `admin.js`: admin page entry/orchestration;
+- `admin_api.js`: administrative API requests;
+- `admin_events.js`: UI/event wiring and coordination;
+- `admin_state.js`: admin-page state;
+- `admin_ui.js`: rendering and UI updates;
+- `logs.js`: audit-log UI behavior;
+- `users.service.js`: shared user operations.
+
+Keep API URL construction and request headers in service/API modules. Keep DOM manipulation in UI modules. Keep state mutation predictable and avoid embedding database/business rules in frontend modules.
+
+### Dashboard
+
+- `dashboard.js`: dashboard entry/orchestration;
+- `dashboard.controller.js`: dashboard behavior/controller;
+- `dashboard.service.js`: dashboard API calls and data preparation;
+- `dashboard.charts.js`: chart rendering;
+- `dashboard.events.js`: event wiring.
+
+Dashboard statistics are backend-derived. Do not calculate authoritative user or message counts only in the browser; use `/auth/admin/dashboard` and render its response.
+
+### Analytics
+
+- `analytics.js`: analytics entry/orchestration;
+- `analytics.controller.js`: filters and controller logic;
+- `analytics.service.js`: calls to `/auth/admin/analytics/*` endpoints;
+- `analytics.events.js`: user interaction/event wiring.
+
+Analytics date ranges use `Asia/Kolkata` in the backend. Keep the UI's date serialization in `YYYY-MM-DD` and make inclusive range behavior explicit. Analytics count messages associated with conversations in the selected period; do not silently reinterpret the backend's metric definitions.
+
+### Files
+
+- `files.html`: file-management page;
+- `js/files/api.js`: file API access;
+- `js/files/upload.js`: upload UI/flow.
+
+Use `FormData` for uploads, preserve Bearer authorization for authenticated endpoints, and handle binary download responses as downloads rather than JSON. Share-link downloads are intentionally token-based and do not require a JWT. Never treat a link token as ordinary public metadata; it grants access to the file.
+
+## 9. EventBus and frontend communication
+
+The admin, dashboard, and analytics modules are split into event-oriented modules, but the precise EventBus implementation/API should be verified in the current source before extending it. Search for the existing event registration/dispatch mechanism and follow its naming/payload conventions rather than introducing a second event system. Event handlers should not make hidden network requests with inconsistent error handling; delegate requests to the relevant service module and let controllers coordinate loading/error/success state.
+
+When adding an event:
+
+1. Define its name and payload shape.
+2. Register/unregister handlers consistently with the existing lifecycle.
+3. Keep the payload free of secrets.
+4. Handle duplicate dispatches and loading states.
+5. Test the visible behavior and the backend call separately.
+
+## 10. Adding or changing an API
+
+1. Choose the owning service: identity/settings/chat/admin in Auth Service; file/storage/sharing in File Service; dialogue behavior in Rasa/SDK.
+2. Add a route in the relevant `app/routes/` or `app/api/` module.
+3. Define/reuse Pydantic schemas in `app/schemas/` and ORM/service layers where appropriate.
+4. Apply `get_current_user`, `get_current_session`, `require_admin`, or File Service authentication/permission checks as appropriate.
+5. Validate ownership and resource relationships in the backend; do not rely on frontend checks.
+6. Use consistent error status codes and avoid exposing internal exceptions/secrets.
+7. Add audit events for security-sensitive administrative or file-access operations.
+8. Update `docs/api.md`, `docs/testing.md`, and relevant UI/service code.
+9. Test success, invalid input, missing resources, unauthorized access, and cross-user access.
+
+## 11. Logging, debugging, and code quality
+
+Use Compose logs to investigate service startup and request failures:
 
 ```bash
 docker compose ps
+docker compose logs --tail=200 auth
+docker compose logs --tail=200 file_service
+docker compose logs --tail=200 rasa
+docker compose logs --tail=200 rasa_sdk
+docker compose logs --tail=200 nginx
+docker compose logs --tail=200 postgres
 ```
 
-Alternatively:
+Use browser developer tools for failed requests, console errors, localStorage, and network payloads. Avoid pasting JWTs or secrets into issue trackers. The current Auth Service and File Service use Python logging/HTTP exceptions inconsistently in places; improve diagnostics without exposing token material, passwords, file bytes, master keys, or SQL credentials.
 
-```bash
-docker ps
-```
-
----
-
-## View Service Logs
-
-View logs for an individual service:
-
-```bash
-docker compose logs -f auth
-docker compose logs -f file_service
-docker compose logs -f nginx
-docker compose logs -f rasa
-```
-
-To view logs for all services:
-
-```bash
-docker compose logs -f
-```
-
----
-
-## Database Access
-
-Open a PostgreSQL shell inside the PostgreSQL container:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot
-```
-
-For a single SQL query, use:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT * FROM users;"
-```
-
----
-
-## Chat History Development
-
-The chat history also belongs to an authenticated user. The database
-relationships are:
-
-```text
-users
-  │
-  │ users.id ← chat_history.user_id
-  │           ON DELETE CASCADE
-  ▼
-chat_history
-  │
-  │ chat_history.id ← chat_messages.chat_id
-  │                   ON DELETE CASCADE
-  ▼
-chat_messages
-```
-
-- **chat_history.user_id** references **users.id** with **ON DELETE CASCADE**.
-- **chat_messages.chat_id** references **chat_history.id** with **ON DELETE CASCADE**.
-- Deleting a user deletes the user's chat-history records.
-- Deleting a chat-history record deletes its associated chat messages.
-
-The **chat_history** table represents the conversation/session:
-
-```text
-id
-user_id
-session_id
-timestamp
-```
-
-The **chat_messages** table stores individual messages:
-
-``` text
-id
-chat_id
-role
-content
-created_at
-```
-
-SmartChat currently supports these message roles:
-
-```text
-user
-chatbot
-```
-
-For example, a stored conversation may appear in PostgreSQL as:
-
-**chat_history**
-
- id |   session_id     | user_id | timestamp
-----:|----------------:|--------:|-------------------------------
-  1 |  chat_test_UserA |      38 | 2026-09-04 12:53:54.622459+00
-
-with related messages:
-
-**chat_messages**
-
- id | chat_id |  role   |  content  | created_at
-----:|--------:|--------:|----------:|------------------------------
-  1 |       1 | user    | Hiiiii    | 2026-09-04 12:53:54.622459+00
-  2 |       1 | chatbot | Helloooo  | 2026-09-04 12:53:54.622459+00
-
-The relationship is:
-
-```text
-chat_messages.chat_id
-        │
-        ▼
-chat_history.id
-```
-
-with:
-
-```text
-ON DELETE CASCADE
-```
-
-Therefore, deleting a chat-history record automatically deletes its
-associated messages.
-
----
-
-## Inspect Chat History
-
-To inspect chat sessions:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, session_id, user_id, timestamp
-      FROM chat_history
-      ORDER BY id DESC;"
-```
-To inspect messages:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, chat_id, role, content, created_at
-      FROM chat_messages
-      ORDER BY id DESC;"
-```
-
-To inspect a complete conversation:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT h.id AS chat_id,
-             h.session_id,
-             h.user_id,
-             h.timestamp,
-             m.id AS message_id,
-             m.role,
-             m.content,
-             m.created_at
-      FROM chat_history h
-      LEFT JOIN chat_messages m
-        ON m.chat_id = h.id
-      WHERE h.id = <CHAT_ID>
-      ORDER BY m.id;"
-```
----
-
-## Store Chat
-
-The Store Chat operation creates a chat-history record and the corresponding
-message records.
-
-Conceptually:
-
-```text
-Store Chat
-    │
-    ▼
-chat_history
-    │
-    ├──► chat_messages(role = user)
-    │
-    └──► chat_messages(role = chatbot)
-```
-The resulting API response contains the chat session metadata together with
-its messages.
-
----
-
-## Chat Message Roles
-
-The current application uses:
-
-```text
-user
-chatbot
-```
-
-The role should be stored in **chat_messages.role**, while the actual message
-text is stored in **chat_messages.content**.
-
-Do not add **message** or **response** columns to **chat_history** for the current chat-history implementation.
-
----
-
-## Chat Deletion
-
-Because of the foreign-key cascade:
-
-```text
-chat_history.id
-      │
-      ▼
-chat_messages.chat_id
-      │
-      └── ON DELETE CASCADE
-```
-
-deleting a chat session automatically removes its associated messages.
-
-This can be verified with:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "DELETE FROM chat_history
-      WHERE id = <CHAT_ID>;"
-```
-
-Then:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT *
-      FROM chat_messages
-      WHERE chat_id = <CHAT_ID>;"
-```
-
-Expected result:
-
-```text
-0 rows
-```
-
-The above SQL command is intended only to verify the database-level
-`ON DELETE CASCADE` behavior.
-
-For normal application testing, chat deletion should be performed through the
-application/API rather than directly against PostgreSQL.
-
----
-
-## Database Backup
-
-Create a PostgreSQL database dump from the running container:
-
-```bash
-docker compose exec -T postgres pg_dump \
-  -U chatbot \
-  -d chatbot > backup.sql
-```
-
-The generated backup.sql file is created on the host machine in the current
-directory.
-
-Database backups should be handled carefully and should not be committed to
-version control if they contain real user or application data.
-
----
-
-## Authentication Development
-
-The frontend stores the JWT in browser localStorage using the key
-authToken.
-
-To inspect the stored token during development, open the browser Developer
-Tools Console while accessing the application and run:
-
-```javascript
-localStorage.getItem("authToken")
-```
-
-To inspect the available localStorage keys and values:
-
-```javascript
-Object.fromEntries(Object.entries(localStorage))
-```
-
-The JWT is sent to protected APIs using the HTTP Authorization header:
-
-```http
-Authorization: Bearer <JWT>
-```
-
-The token should be treated as sensitive authentication data and should not be
-committed to source control or shared in logs, screenshots, or documentation.
-
----
-
-### Public Registration Development
-
-Public registration is implemented by `auth_service/app/routes/register.py` and is exposed through the Nginx `/auth` prefix as `POST /auth/register`. The route:
-
-1. Reads `allow_user_registration` from `system_settings`.
-2. Defaults to enabled when the setting is absent.
-3. Returns `403` when registration is disabled.
-4. Rejects an existing username with `409`.
-5. Hashes the submitted password and creates the account with role `user`.
-
-The login page requests `GET /auth/admin/settings/public` and keeps the registration link hidden unless `allow_user_registration` is explicitly `true`. If the request fails, the link remains hidden. The registration page performs the same availability check and disables the Register button when registration cannot be confirmed as enabled. It also checks that the password and confirmation match before submitting.
-
-### Chat Runtime Settings Development
-
-The authenticated chat persistence endpoint reads two system settings before storing a message:
-
-- `maintenance_mode`: when enabled, non-admin users receive `503 Service Unavailable`; administrators are allowed through.
-- `max_message_length`: user-submitted chat messages longer than the configured integer limit receive `400 Bad Request`. The limit applies to the incoming user message and does not restrict the length of the chatbot/Rasa response.
-If the stored value is missing or invalid, the backend uses `5000`.
-
-The browser chat page applies the configured `maxLength` to the user input field, displays a live character counter, and prevents sending input that exceeds the configured limit. The backend remains the authoritative enforcement point.
-
-The chat renderer now uses DOM `textContent` for user message content and typing output rather than inserting message text with `innerHTML`.
-
-## File Service Development
-
-Uploaded files are stored in the File Service runtime storage directory:
-
-```text
-file_service/uploads/
-```
-
-Uploaded files are encrypted before being stored.
-
-The per-file encryption key is protected using the server-side:
-
-```text
-FILE_MASTER_KEY
-```
-
-The FILE_MASTER_KEY should be configured through the environment and must
-not be committed to version control.
-
-### Cross-Service User IDs
-
-The Auth Service owns the `users` table.
-
-The File Service stores references to Auth Service users as integer ID
-columns such as `owner_id`, `user_id`, `shared_by`, `shared_with_user_id`,
-and `created_by`.
-
-These columns are defined and stored in the File Service database, but the
-user identities they reference are owned by the Auth Service.
-
-Do not import the Auth Service's `users` SQLAlchemy model or create
-application-level ORM relationships to that model.
-
-When adding or modifying user-reference fields in File Service models,
-preserve the service boundary. User identity and user information should be
-validated through the Auth Service/API rather than through direct use of the
-Auth Service's ORM models.
-
-The current database schema defines foreign-key relationships from the
-applicable File Service user-reference columns to `users.id`, with
-`ON DELETE CASCADE`. 
-
-These database constraints provide referential integrity and
-cascading deletion independently of whether the corresponding relationship
-is represented as a SQLAlchemy ORM foreign key.
-
----
-
-## Audit Log Verification
-
-The File Service records successful file-related operations in the
-`file_access_logs` table.
-
-Phase 2 audit logging distinguishes between authenticated access and
-share-link access using the `access_method` field.
-
-The audit context is:
-
-```text
-AUTHENTICATED
-    user_id       = required
-    share_link_id = NULL
-
-SHARE_LINK
-    user_id       = NULL
-    share_link_id = required
-```
-
-To inspect recent audit records:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, file_id, user_id, share_link_id,
-      access_method, action, ip_address, access_time
-      FROM file_access_logs
-      ORDER BY id DESC;"
-```
-
-To inspect the audit history for a specific file:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, file_id, user_id, share_link_id,
-      access_method, action, ip_address, access_time
-      FROM file_access_logs
-      WHERE file_id = 25
-      ORDER BY id DESC;"
-```
-
-Successful authenticated downloads are recorded with:
-
-```text
-user_id       = authenticated user's ID
-share_link_id = NULL
-access_method = AUTHENTICATED
-```
-
-Successful share-link downloads are recorded with:
-
-```text
-user_id       = NULL
-share_link_id = ID of the share link
-access_method = SHARE_LINK
-```
-
-The database enforces these access-context relationships through the
-ck_file_access_logs_access_context CHECK constraint.
-
-For detailed audit-log test procedures, see the Testing Guide.
-
----
-
-## User Deletion
-
-User deletion is currently implemented as a **hard delete**.
-
-An administrator can delete another user through:
-
-```http
-DELETE /users/{user_id}
-```
-
-The deletion is performed by the Auth Service. Before deleting the user, the
-endpoint:
-
-- Verifies that the target user exists.
-- Prevents an administrator from deleting their own account.
-- Prevents deletion of the last administrator.
-- Deletes the user from the users table.
-- Relies on PostgreSQL foreign-key ON DELETE CASCADE constraints to remove
-dependent records.
-
-The current endpoint returns the deleted user's ID and username:
-
-```text
-{
-  "status": "deleted",
-  "user_id": 33,
-  "username": "chat_test_user"
-}
-```
-
-The username is saved before the SQLAlchemy user object is deleted so that it
-can safely be returned in the response.
-
-### Current Cascade Behavior
-
-The current database schema uses PostgreSQL foreign-key cascade rules for
-user-related records.
-
-The **chat_messages.chat_id** foreign key references **chat_history.id** with **ON DELETE CASCADE**.
-
-The relevant relationships include:
-
-```text
-users
- │
- ├── 1:N ──► chat_history
- │             │
- │             │ ON DELETE CASCADE
- │             ▼
- │         chat_messages
- │
- ├── 1:N ──► files
- │             │
- │             ├──► encryption_keys
- │             ├──► file_permissions
- │             └──► file_access_logs
- │
- ├── 1:N ──► file_access_logs
- │
- └── 1:N ──► file_permissions
-```
-
-When a user is deleted, PostgreSQL performs the configured cascading deletes.
-
-For example, deleting a user who owns files causes the owned files to be
-deleted. The dependent records associated with those files, such as
-encryption keys, permissions, and file-access logs, are then removed through
-their corresponding cascade relationships.
-
-User-associated chat history is removed through the `chat_history.user_id`
-foreign key. Associated `chat_messages` records are then removed through the
-`chat_messages.chat_id` → `chat_history.id` `ON DELETE CASCADE` relationship.
-
-User-associated audit records are removed through their applicable foreign-key
-relationships.
-
-### Current Deletion Flow
-
-```text
-Admin
-  │
-  │ DELETE /users/{user_id}
-  ▼
-Auth Service
-  │
-  ├──► Validate administrator JWT
-  │
-  ├──► Locate target user
-  │
-  ├──► Prevent self-deletion
-  │
-  ├──► Prevent deletion of last administrator
-  │
-  └──► DELETE users row
-       │
-       ▼
-       PostgreSQL
-       │
-       ├──► Cascade chat_history
-       │       │
-       │       └──► Cascade chat_messages
-       │
-       ├──► Cascade owned files
-       │       ├──► encryption keys
-       │       ├──► permissions
-       │       └──► file access logs
-       │
-       ├──► Cascade user file permissions
-       └──► Cascade user access logs
-```
-
-### Verify User Deletion
-
-Before deletion, identify the user:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, username, role
-      FROM users
-      WHERE username = 'chat_test_user';"
-```
-
-Check the user's related records:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT
-    (SELECT count(*)
-     FROM chat_history
-     WHERE user_id = <USER_ID>) AS chat_history,
-
-    (SELECT count(*)
-     FROM chat_messages m
-     JOIN chat_history h ON h.id = m.chat_id
-     WHERE h.user_id = <USER_ID>) AS chat_messages,
-
-    (SELECT count(*)
-     FROM files
-     WHERE owner_id = <USER_ID>) AS files,
-
-    (SELECT count(*)
-     FROM file_access_logs
-     WHERE user_id = <USER_ID>) AS access_logs,
-
-    (SELECT count(*)
-     FROM file_permissions
-     WHERE shared_by = <USER_ID>) AS permissions_owned,
-
-    (SELECT count(*)
-     FROM file_permissions
-     WHERE shared_with_user_id = <USER_ID>) AS permissions_received;"
-```
-
-Delete the user through the application endpoint rather than directly through
-PostgreSQL:
-
-```http
-DELETE /users/<USER_ID>
-Authorization: Bearer <ADMIN_JWT>
-```
-
-After deletion, verify that the user no longer exists:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, username, role
-      FROM users
-      WHERE id = <USER_ID>;"
-```
-
-Then verify that the related records have also been removed:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT count(*) FROM chat_history
-      WHERE user_id = <USER_ID>;
-
-      SELECT count(*) FROM files
-      WHERE owner_id = <USER_ID>;
-
-      SELECT count(*) FROM file_access_logs
-      WHERE user_id = <USER_ID>;
-
-      SELECT count(*) FROM file_permissions
-      WHERE shared_by = <USER_ID>;
-
-      SELECT count(*) FROM file_permissions
-      WHERE shared_with_user_id = <USER_ID>;"
-```
-
-Expected result for each count is:
-
-```text
-0
-```
-
-### Important Storage Consideration
-
-Database cascade deletion removes database records. It does not by itself
-remove encrypted files from the File Service's filesystem storage.
-
-The application currently stores encrypted files under:
-
-```text
-file_service/uploads/
-```
-
-Therefore, when a user's files records are deleted through PostgreSQL,
-the corresponding .enc files must also be considered.
-
-A future production implementation should ensure that deletion of a file
-database record and deletion of its physical encrypted object are handled
-consistently. This may require an application-level file cleanup mechanism,
-rather than relying solely on PostgreSQL ON DELETE CASCADE.
-
-PostgreSQL test proved:
-
-```text
-users              → deleted
-chat_history       → deleted
-files              → deleted
-file_permissions   → deleted
-file_access_logs   → deleted
-```
-
-But actual encrypted objects live separately in:
-
-```text
-file_service/uploads/*.enc
-```
-
-PostgreSQL cannot know that 30 or 31 corresponded to a particular .enc file unless application explicitly performs that cleanup.
-
-So current implementation has successfully demonstrated database-level cascading deletion, but it has not yet demonstrated complete user-data deletion from all storage.
-
-### Current Data-Deletion Policy
-
-The current development implementation intentionally uses hard deletion.
-Hard deletion is not inherently unproduction-ready. It is a valid production policy if the product intentionally wants account deletion to erase the user's application data.
-
-### Important Note
-
-> - Current policy: hard delete user and associated application data. 
-> - Production retention requirements have not yet been finalized.
-
-It does not currently implement:
-
-- Soft deletion
-- User-data retention periods
-- Legal hold handling
-- Recovery of deleted users
-- Separate audit retention after user deletion
-- Production-grade asynchronous storage cleanup
-
-These concerns should be addressed before defining a production data-retention
-and account-deletion policy.
-
----
-
-## Administrative Chat History Development
-
-The Admin application now loads chat-history summaries when the `chat-history` section is selected. The controller delegates retrieval to `chat_history.service.js`, which caches the result and emits `chat-history:loading`, `chat-history:loaded`, and `chat-history:error` events.
-
-### Admin Chat History API
-
-#### Get All Chat History
-
-The Admin application retrieves the chat-history summaries using:
-
-```http
-GET /admin/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-When accessed through the Nginx `/auth/` prefix:
-
-```http
-GET /auth/admin/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-#### Get User Chats
-
-The Admin application can retrieve the chat histories belonging to a
-specific user using:
-
-```http
-GET /admin/users/{user_id}/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-When accessed through the Nginx `/auth/` prefix:
-
-```http
-GET /auth/admin/users/{user_id}/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-The `{user_id}` identifies the user whose chat histories are being requested.
-
-The endpoint is administrator-only and should return only the chat histories
-associated with the requested user.
-
-#### Get Chat Messages
-
-When an administrator selects a chat-history row, the application retrieves
-the messages belonging to that conversation using:
-
-```http
-GET /admin/users/{user_id}/chats/{chat_id}/messages
-Authorization: Bearer <ADMIN_JWT>
-```
-
-When accessed through the Nginx `/auth/` prefix:
-
-```http
-GET /auth/admin/users/{user_id}/chats/{chat_id}/messages
-Authorization: Bearer <ADMIN_JWT>
-```
-
-The UI verifies the presence of both `user_id` and `chat_id` before requesting
-the messages.
-
-The returned messages are rendered in the Chat Details modal and are
-displayed in ascending message-ID order.
-
-### Admin Chat History Deletion
-
-#### Delete Chat History
-
-The Admin API provides an endpoint for deleting an entire chat-history
-session:
-
-```http
-DELETE /admin/chat/history/{session_id}
-Authorization: Bearer <ADMIN_JWT>
-```
-
-When accessed through the Nginx `/auth/` prefix:
-
-```http
-DELETE /auth/admin/chat/history/{session_id}
-Authorization: Bearer <ADMIN_JWT>
-```
-
-The endpoint requires an authenticated administrator. The request must contain
-a valid JWT with administrator privileges.
-
-The `{session_id}` identifies the chat session to be deleted.
-
-#### Deletion Behavior
-
-The operation deletes the corresponding `chat_history` record.
-
-Because
-`chat_messages.chat_id` references `chat_history.id` with:
-
-```text
-ON DELETE CASCADE
-```
-
-deleting the chat-history record also deletes all messages associated with
-that conversation.
-
-The deletion relationship is:
-
-```text
-DELETE /admin/chat/history/{session_id}
-              │
-              ▼
-        chat_history
-              │
-              │ ON DELETE CASCADE
-              ▼
-        chat_messages
-```
-
-Therefore, deleting a chat-history session removes both the
-`chat_history` record and its associated `chat_messages` records.
-
-#### Authorization
-
-The endpoint is an administrative operation and must not be accessible to an
-ordinary authenticated user.
-
-An administrator request should succeed when the supplied session ID
-identifies an existing chat history.
-
-An ordinary-user JWT should receive:
-
-```text
-403 Forbidden
-```
-
-because the endpoint requires administrative privileges.
-
-#### Session Lookup
-
-The endpoint identifies the chat history using the supplied `session_id`.
-
-The implementation should ensure that the intended chat-history record is
-selected before deletion and that the operation does not unintentionally
-delete another user's conversation when a session ID is supplied.
-
-#### Expected Result
-
-For a successful deletion, the API returns a successful HTTP response
-indicating that the chat history was deleted.
-
-After deletion, the corresponding `chat_history` record should no longer
-exist, and its associated `chat_messages` records should also be absent
-because of the database cascade.
-
-#### Database Verification
-
-Before deletion:
-
-```bash
-SELECT id, session_id, user_id
-FROM chat_history
-WHERE session_id = '<SESSION_ID>';
-```
-
-Check the associated messages:
-
-```bash
-SELECT m.id, m.chat_id, m.role, m.content
-FROM chat_messages m
-JOIN chat_history h
-  ON h.id = m.chat_id
-WHERE h.session_id = '<SESSION_ID>';
-```
-
-After calling:
-
-```http
-DELETE /admin/chat/history/{session_id}
-```
-
-repeat both queries.
-
-Expected result:
-
-```text
-chat_history: 0 rows
-
-chat_messages: 0 rows
-```
-
-This verifies both application-level deletion and the database-level
-`ON DELETE CASCADE` behavior.
-
-### Chat History Cache
-
-`fetchChatHistory()` uses an in-memory module cache. Calling
-`fetchChatHistory(false)` reuses the cached list when available;
-`fetchChatHistory(true)` performs a new API request.
-
-```text
-Admin navigates to Chat History
-        │
-        ▼
-chat_history.service.js
-        │
-        ├── cache hit ──► chat-history:loaded
-        │
-        └── cache miss ─► GET /admin/chats
-                              │
-                              ▼
-                         update cache
-                              │
-                              ▼
-                       chat-history:loaded
-```
-
-### Admin User List Development
-
-The Users UI maintains separate `allUsers` and `filteredUsers` collections
-and a `currentUsersPage` value.
-
-Users are sorted by numeric ID after retrieval. Search matches ID, username,
-email, or role, and the UI supports pagination through the retrieved user
-list.
-
-The Refresh action emits `users:refresh-requested`, causing the service to
-bypass its cache.
-
-The exact number of users displayed per page has not yet been explicitly
-verified and should not be treated as a confirmed behavior until tested.
-
-The user renderer escapes displayed values before inserting them into HTML.
-The same `escapeHtml()` utility is used for `chat-history` and `audit-log`
-rendering.
-
-#### Admin Users API Response Behavior
-
-The Admin Users endpoint is currently:
-
-```http
-GET /admin/users
-Authorization: Bearer <ADMIN_JWT>
-```
-
-When exposed through the Nginx `/auth/` prefix, the externally accessible URL
-is:
-
-```http
-GET /auth/admin/users
-Authorization: Bearer <ADMIN_JWT>
-```
-
-The endpoint currently exposes the serialized ORM user model in its response
-rather than returning a separately defined, explicitly restricted
-user-response schema.
-
-This means changes to the underlying ORM model or its serialization behavior
-may affect the API response.
-
-##### Development Consideration
-
-The current implementation should be treated as an implementation detail
-that requires review before production hardening.
-
-The response should eventually use an explicit response schema containing only
-fields that are intentionally exposed to administrators.
-
-In particular, authentication-related, internal, or sensitive ORM fields
-should not be exposed merely because they exist on the SQLAlchemy model.
-
-Until this is addressed, changes to the User ORM model should be reviewed for
-their potential effect on:
-
-```http
-GET /admin/users
-```
-
-and its externally exposed route:
-
-```http
-GET /auth/admin/users
-```
-
-#### Admin Users Pagination
-
-The Users UI implements pagination, but the exact number of users displayed
-per page has not yet been explicitly verified.
-
-The current documentation therefore does not define a fixed page size.
-
-The pagination behavior should be explicitly tested before documenting the
-number of users displayed on each page.
-
-### Admin Navigation State
-
-The Admin state module maintains an explicit allow-list of valid sections:
-`dashboard`, `users`, `chat-history`, and `analytics`. `setCurrentSection()`
-returns `false` and leaves the current section unchanged when an invalid section
-is supplied.
-
-### Admin Navigation and Session Cleanup
-
-The Admin controller restores the initial section from `window.location.hash`
-after initialization.
-
-The UI uses hash changes to emit navigation events and uses EventBus to update
-the active section and visible panel.
-
-Logout continues to require confirmation before redirecting to
-`/login.html`. The controller clears `authToken`, `username`, and `role` from
-localStorage before redirecting.
-
----
-
-## Session-Aware Chat Development
-
-Successful login now creates a new UUID session ID for every login. The value is inserted into the JWT as `session_id` and is also returned to the frontend:
-
-```json
-{
-  "access_token": "<JWT>",
-  "session_id": "<UUID>"
-}
-```
-
-The chat save endpoint no longer takes `session_id` or `sender` from the request schema. `get_current_session()` validates the bearer token and extracts `session_id` from the JWT. 
-
-### Chat History API Endpoints
-
-The authenticated chat-history API is exposed through the Auth Service:
-
-```http
-POST /chat/history
-GET  /chat/history
-```
-
-Both endpoints require a valid JWT:
-
-```http
-Authorization: Bearer <JWT>
-```
-
-The client does not provide session_id in the request URL. The server
-extracts the session ID from the authenticated JWT.
-
-### Store Chat
-
-```http
-POST /chat/history
-Authorization: Bearer <JWT>
-Content-Type: application/json
-```
-
-Request body:
-
-```json
-{
-  "message": "Hiiiiiiiiiiiiiiiiiiiiiiii",
-  "response": "Helloooooooooooooooooooooooooooooooooooo"
-}
-```
-
-The server extracts:
-
-```text
-user_id    ← authenticated JWT
-session_id ← authenticated JWT
-```
-
-Chat persistence then searches by:
-
-```text
-ChatHistory.session_id == authenticated session_id
-AND
-ChatHistory.user_id == authenticated user.id
-```
-
-A conversation record is created only when that combination does not already
-exist. Each request adds a user message and, when supplied, a chatbot message
-to the existing conversation.
-
-### Chat Session Uniqueness Constraint
-
-The session-aware chat design requires a single chat_history record for each
-authenticated user/session combination.
-
-The intended uniqueness rule is:
-
-```text
-(user_id, session_id)
-```
-
-A user may have multiple chat sessions, and different users may have different
-chat sessions, but the same combination of:
-
-```text
-user_id + session_id
-```
-
-must identify only one chat_history record.
-
-Conceptually:
-
-```text
-UNIQUE (user_id, session_id)
-```
-
-This constraint should be enforced at the database level rather than relying
-only on application-level lookup logic.
-
-The application currently searches for an existing conversation using:
-
-```text
-ChatHistory.user_id == authenticated user.id
-AND
-ChatHistory.session_id == authenticated session_id
-```
-
-The database uniqueness constraint should provide an additional guarantee
-against duplicate chat-history records being created for the same
-user/session combination, including during concurrent requests.
-
-#### Current Status
-
-The (user_id, session_id) database uniqueness constraint has been identified
-as required for the session-aware chat-history design.
-
-It remains to be implemented/verified in the database schema.
-
-Until the constraint is implemented, application-level lookup prevents normal
-duplicate creation, but database-level uniqueness is not yet enforcing the
-invariant.
-
-### Get Chat History
-
-```http
-GET /chat/history
-Authorization: Bearer <JWT>
-```
-
-The server again extracts user_id and session_id from the JWT and returns
-the chat history matching both values.
-
-The isolation model is:
-
-```text
-GET /chat/history
-        │
-        ▼
-JWT
- ├── user_id
- └── session_id
-        │
-        ▼
-ChatHistory
- WHERE user_id = JWT.user_id
- AND session_id = JWT.session_id
-        │
-        ▼
-ChatMessage
- WHERE chat_id = ChatHistory.id
-```
-
-A successful response contains the conversation metadata and its associated
-messages:
-
-```json
-[
-  {
-    "id": 24,
-    "session_id": "618dd92e-84cd-47fd-8869-63d18ada80f3",
-    "user_id": 1,
-    "timestamp": "2026-09-10T15:22:11.121607Z",
-    "messages": [
-      {
-        "id": 65,
-        "chat_id": 24,
-        "role": "user",
-        "content": "Hiiiiiiiiiiiiiiiiiiiiiiii",
-        "created_at": "2026-09-10T15:22:11.121607Z"
-      },
-      {
-        "id": 66,
-        "chat_id": 24,
-        "role": "chatbot",
-        "content": "Helloooooooooooooooooooooooooooooooooooo",
-        "created_at": "2026-09-10T15:22:11.121607Z"
-      }
-    ]
-  }
-]
-```
-
-### Session-Based Conversation Reuse
-
-This means repeated messages in one login session are grouped under one
-chat_history record instead of creating a new conversation record for every
-message.
-
-The relationship is:
-
-```text
-One login session
-      │
-      ▼
-session_id
-      │
-      ▼
-chat_history
-      │
-      ├──► chat_messages (user)
-      │
-      ├──► chat_messages (chatbot)
-      │
-      └──► additional messages
-```
-
-A fresh login receives a new session ID, so messages saved after the new login
-are associated with the new session rather than the previous conversation.
-
-### Development Verification
-
-After login, inspect the response and confirm that a UUID-like session_id is
-returned. Decode the JWT during development and confirm the same value is
-present in the session_id claim.
-
-Then:
-
-1. Send multiple POST /chat/history requests during the same login
-session.
-2. Verify that all messages reference the same chat_history.id.
-3. Send GET /chat/history using the same JWT.
-4. Verify that the conversation and all associated messages are returned.
-5. Log out and authenticate again.
-6. Confirm that the new login receives a different session_id.
-7. Save another message and verify that it is associated with the new session.
-
----
-
-## Administrative Dashboard Development
-
-The Admin Dashboard is now a data-backed section rather than a static
-placeholder. The existing `GET /admin/dashboard` endpoint returns the data
-required by the dashboard UI.
-
-### Dashboard API Response
-
-The response includes:
-
-- `stats.users` — total users.
-- `stats.conversations` — total `chat_history` records.
-- `stats.messages` — total `chat_messages` records.
-- `stats.active_users` — distinct users with at least one conversation.
-- `recent_users` — up to five users ordered by descending user ID.
-- `recent_conversations` — up to five conversations ordered by descending
-  conversation timestamp.
-- `activity` — seven calendar days of conversation and message counts.
-
-The dashboard activity calculation uses the `Asia/Kolkata` analytics timezone.
-Conversation counts are based on `ChatHistory.timestamp`; message counts are
-calculated by joining `ChatMessage` to `ChatHistory` through `chat_id` and using
-the same conversation timestamp window.
-
-### Dashboard Frontend
-
-The dashboard is implemented through:
-
-- `dashboard.js`
-- `dashboard.service.js`
-- `dashboard.charts.js`
-- `dashboard.css`
-- Chart.js is loaded in `frontend/admin.html` from the jsDelivr CDN for dashboard chart rendering.
-- dashboard rendering in `admin_ui.js`
-
-`admin.js` initializes the dashboard section and calls `fetchDashboard()` when
-Dashboard navigation is selected. Dashboard state is communicated through
-`dashboard:loading`, `dashboard:loaded`, and `dashboard:error` events.
-
-The dashboard displays four summary cards, activity charts, recent users, and
-recent conversations. Usernames and roles rendered into dashboard HTML are
-escaped before insertion.
-
-### Dashboard Development Verification
-
-For local development:
-
-1. Sign in with an administrator account.
-2. Open the Admin **Dashboard** section.
-3. Verify the four summary values are populated.
-4. Verify the activity charts display the last seven days.
-5. Verify recent users and recent conversations are displayed.
-6. Confirm a failed dashboard request produces the documented error state
-   rather than leaving stale loading values.
-
----
-
-## Administrative Analytics Development
-
-The Admin application includes an analytics section backed by
-`auth_service/app/routes/admin_analytics.py`. The router is mounted by the
-Auth Service at:
-
-```text
-/auth/admin/analytics
-```
-
-All analytics endpoints require administrator authorization.
-
-### Analytics Date Range
-
-The backend uses `Asia/Kolkata` as the analytics timezone. The optional
-`start_date` and `end_date` parameters use `YYYY-MM-DD` values.
-
-When no end date is supplied, the current date in `Asia/Kolkata` is used.
-When no start date is supplied, the default range starts 29 days before the
-selected end date.
-
-The range is converted into timezone-aware start/end datetime boundaries
-before database filtering.
-
-### Analytics Endpoints
-
-The analytics router provides:
-
-```text
-GET /admin/analytics/overview
-GET /admin/analytics/chat-activity
-GET /admin/analytics/message-activity
-GET /admin/analytics/top-users
-GET /admin/analytics/chat-statistics
-GET /admin/analytics/hourly-activity
-```
-
-`top-users` accepts `limit`, constrained to 1–100 and defaulting to 10.
-
-### Analytics Frontend
-
-The Admin analytics implementation is split across:
-
-```text
-frontend/js/analytics.js
-frontend/js/analytics.controller.js
-frontend/js/analytics.events.js
-frontend/js/analytics.service.js
-frontend/css/analytics.css
-```
-
-`analytics.service.js` maintains the selected date range and requests the six
-datasets in parallel. `analytics.controller.js` handles initialization,
-date presets, filtering, refresh, export, and rendering. EventBus events
-coordinate loading, loaded, error, refresh, and export states.
-
-The analytics export is generated client-side as CSV from the fetched
-overview, daily chat activity, and top-user data.
-
-### Analytics Development Verification
-
-For local development:
-
-1. Sign in with an administrator account.
-2. Open the Admin **Analytics** section.
-3. Verify the default date range is populated.
-4. Confirm the analytics requests are sent through `/auth/admin/analytics`.
-5. Apply a custom date range and verify that the same range is used by the
-   analytics requests.
-6. Refresh the analytics section and verify that fresh requests are issued.
-7. Export the analytics and verify that a CSV file is generated.
-
----
-
-## Administrative Settings Development
-
-The Admin UI provides a Settings section backed by `/admin/settings`. The
-implementation is split between `admin_api.js` and `settings.controller.js`;
-navigation emits `settings:load-requested`, which causes the controller to load the current values.
-
-The current settings are:
-
-- `application_name` — default `ChatBot`, validated to 1–100 characters.
-- `max_message_length` — default `5000`, validated from 1 through 100000.
-- `maintenance_mode` — default `false`.
-- `allow_user_registration` — default `true`.
-
-The controller supports Refresh, Reset-to-defaults, and Save Changes. Successful
-updates report the returned setting keys. Validation failures with HTTP 422 are
-presented as settings validation errors. Backend setting updates also create an
-`AuditLog` record.
-
-### Settings Development Verification
-
-1. Sign in with an administrator account.
-2. Open **Settings** and verify the four current/default values load.
-3. Change one or more values and save.
-4. Verify the response reports the updated keys and the UI shows success.
-5. Enter values outside the documented validation ranges and verify the UI reports a validation error.
-6. Use Refresh and verify the persisted backend values are loaded again.
-7. Use Reset and verify that only the form is returned to the documented defaults; saving is required to persist those values.
-
----
-
-## Administrative System Logs Development
-
-Administrative audit records are stored in the Auth Service `audit_logs` table.
-The `AuditLog` model contains `user_id`, `username`, `level`, `action`, optional
-`details`, and `timestamp`. Administrative user operations and system-setting
-updates create audit records through the shared audit-log helper.
-
-The Admin Logs section uses `/admin/logs` for retrieval and supports:
-
-- level filtering (`all`, `info`, `warning`, `error`);
-- case-insensitive search across action, details, and username;
-- pagination with a default page size of 50 and a maximum of 200;
-- newest-first ordering;
-- Refresh and CSV Download controls.
-
-`GET /admin/logs/export` applies the same level/search filters and returns a CSV
-file named `system_logs.csv`. `POST /admin/logs` is available for creating manual `info`, `warning`, or `error` log entries and requires an action.
-
-The Admin page loads `logs.css` for the logs section styling.
-
-### System Logs Development Verification
-
-1. Perform an administrative action such as creating a user, changing a role,
-   deleting a user, or updating settings.
-2. Open **Logs** and verify the corresponding audit record is visible.
-3. Filter by level and verify unrelated levels are excluded.
-4. Search by username or action/detail text and verify matching records are returned.
-5. Change pages and verify pagination metadata and newest-first ordering.
-6. Use Download and verify the CSV contains Timestamp, User, Level, Action, and
-   Details columns.
-7. Verify ordinary users cannot access the administrative log endpoints.
-
----
-
-## Frontend API Error Handling
-
-`frontend/js/admin_api.js` now exposes HTTP status and parsed response data on API errors. JSON error responses containing FastAPI/Pydantic validation details are formatted into readable field/message text. Successful HTTP 204 responses return `null`. Retry behavior remains restricted to retryable GET requests.
-
----
-
-## Pending Development and Hardening Items
-
-The following items have been identified during development and testing and
-are intentionally recorded here until they are implemented and verified.
-
-### 1. Admin Users ORM Response Schema
-
-Current behavior:
-
-```http
-GET /admin/users
-```
-
-currently exposes the serialized ORM user model.
-
-Required follow-up:
-
-Introduce an explicit response schema so that the API exposes only fields
-intentionally approved for administrative use.
-
-`Status`: Pending.
-
-### 2. Chat Session Uniqueness Constraint
-
-The session-aware chat model requires:
-
-```text
-UNIQUE (user_id, session_id)
-```
-
-on chat_history.
-
-Required follow-up:
-
-Add and verify a database-level uniqueness constraint for the combination of:
-
-```text
-user_id
-session_id
-```
-
-This should prevent duplicate chat-history records for the same user/session,
-including under concurrent requests.
-
-`Status`: Pending.
-
-### 3. get_user_chats() Test Coverage
-
-The following endpoint requires an explicit test:
-
-```http
-GET /admin/users/{user_id}/chats
-```
-
-The test must verify:
-
-- Administrator access succeeds.
-- Only the requested user's chats are returned.
-- A user with no chats returns an empty collection.
-- A nonexistent user produces the documented not-found response.
-- An `ordinary-user JWT` receives `403 Forbidden`.
-- Chat histories belonging to other users are not returned.
-
-`Status`: Pending verification.
-
-### 4. delete_chat_history() Test Coverage
-
-The administrative chat-history deletion endpoint is:
-
-```http
-DELETE /admin/chat/history/{session_id}
-```
-
-The test should verify:
-
-- Administrator authorization.
-- Successful deletion of the requested chat history.
-- Associated chat_messages are deleted through `ON DELETE CASCADE`.
-- The deleted session is no longer returned by `chat-history` queries.
-- An `ordinary-user JWT` receives `403 Forbidden`.
-- Behavior for a nonexistent session is documented and verified.
-
-`Status`: Pending verification.
-
-### 5. Physical Encrypted-File Cleanup
-
-Database-level user deletion and cascading deletion have been demonstrated,
-but PostgreSQL does not automatically remove encrypted files stored under:
-
-```text
-file_service/uploads/*.enc
-```
-
-Required follow-up:
-
-Implement and verify application-level cleanup of physical encrypted storage
-when the corresponding database records are deleted.
-
-`Status`: Pending.
-
-### 6. Admin Users Pagination Size
-
-The Admin Users UI implements pagination, but the exact number of users
-displayed per page has not yet been explicitly tested and documented.
-
-Required follow-up:
-
-Verify the actual pagination behavior by testing with enough users to span
-multiple pages and confirm:
-
-- Number of users displayed on each page.
-- Behavior when the total number of users is less than one page.
-- Behavior on the final partially filled page.
-- Page navigation behavior.
-- Interaction between search filtering and pagination.
-- Refresh behavior after pagination.
-
-Once verified, document the confirmed page size in the Admin User List
-Development section and the corresponding testing section.
+Keep responsibilities separated: routes validate HTTP inputs and authorization; service modules implement file operations; models describe persisted data; schemas validate request/response shapes; frontend API modules perform requests; controllers coordinate UI behavior; UI modules render state.
 
-`Status`: Pending verification.
+## 12. Testing during development
 
+Use the project’s existing Rasa story test file `rasa/tests/test_stories.yml` for dialogue regression. For FastAPI endpoints, use their OpenAPI docs and a local browser/API client to exercise requests against a development database. No repository-wide Python test runner or frontend test command could be verified from the supplied file list, so do not assume `pytest`, npm scripts, or a CI test command exists until the actual checkout confirms it.
 
-**Tracking Rule** - 
-Items in this section should remain until the corresponding implementation
-and test verification have been completed.
+At minimum, test each change with:
 
-When an item is completed, update the relevant development/testing sections
-and remove or mark the item as completed here.
+- a successful request;
+- invalid/missing input;
+- missing or expired token where protected;
+- non-admin access for admin routes;
+- cross-user/resource access attempts;
+- persistence after a service restart when data is meant to persist;
+- frontend error/loading states;
+- regression tests for adjacent features.
 
----
+See `docs/testing.md` for scenario-based test cases and `docs/troubleshooting.md` for diagnostics.

@@ -1,542 +1,447 @@
 # SmartChat AI Platform — API Reference
 
-This document reflects the current FastAPI Auth Service routes and the recent session-aware chat and administrative chat-history changes. The Auth Service is exposed through Nginx under `/auth`.
+This reference documents routes verified in the supplied Auth Service and File Service source. Browser-facing URLs include the Nginx prefixes. The Auth Service internally defines routes without `/auth`; Nginx maps `/auth/...` to the Auth Service. File Service routes are under `/files`. Rasa is exposed through `/rasa/`.
 
-## Authentication
+> **Source scope:** The supplied ZIP contains the application source and existing `docs/api.md`, but does not contain `docker-compose.yml`, `.env.example`, or a root `README.md`. The external service ports and proxy paths below also use project context supplied earlier. Treat any deployment-specific URL/port as configurable if your local Compose file differs.
 
-### POST /login
+## Conventions
 
-Authenticates a user and creates a new application session.
+- Send `Authorization: Bearer <JWT>` to protected Auth Service and File Service endpoints.
+- Login creates a new UUID `session_id` for each successful login. The JWT contains `user_id`, `sub` (username), `role`, `session_id`, and an expiration approximately 60 minutes after issue.
+- Admin endpoints use `require_admin`; non-admin authenticated users receive `403`.
+- FastAPI validation errors generally return `422` for malformed/missing request fields. Exact error response bodies may vary by endpoint.
+- Public settings are intentionally unauthenticated but are restricted to an allowlist.
 
-**Request**
+## Authentication and registration
 
-```json
-{
-  "username": "<username>",
-  "password": "<password>"
-}
-```
+### `POST /auth/login`
 
-**Successful response**
+Authenticates a user and creates an application session.
 
-```json
-{
-  "access_token": "<JWT>",
-  "session_id": "<UUID>"
-}
-```
+**Authentication/role:** Public.
 
-A new UUID session ID is generated for every successful login. The JWT contains the user ID, username (`sub`), role, session ID, and a 60-minute expiration.
-
-**Failure:** `401 Unauthorized` with `Invalid credentials`.
-
-### Authorization Header
-
-Protected endpoints use:
-
-```http
-Authorization: Bearer <JWT>
-```
-
-The current-session dependency validates the JWT and requires the `session_id` claim.
-
----
-
-## Chat API
-
-### POST /chat/history
-
-Stores a chat turn for the authenticated user and the session represented by the JWT.
-
-**Request**
+**Request JSON**
 
 ```json
-{
-  "message": "Hello",
-  "response": "Hi!"
-}
+{"username":"<username>","password":"<password>"}
 ```
 
-`response` is optional. The request schema no longer accepts client-supplied `session_id` or `sender` fields.
-
-**Processing model**
-
-1. Authenticate the user from the JWT.
-2. Extract the session ID from the JWT.
-3. Find an existing `chat_history` row matching the authenticated user and session.
-4. Create the conversation only when it does not already exist.
-5. Store the user message.
-6. Store the chatbot response when `response` is present.
-
-**Response model**
+**Success `200 OK`**
 
 ```json
-{
-  "id": 1,
-  "session_id": "<UUID>",
-  "user_id": 1,
-  "timestamp": "<timestamp>",
-  "messages": [
-    {
-      "id": 1,
-      "chat_id": 1,
-      "role": "user",
-      "content": "Hello",
-      "created_at": "<timestamp>"
-    }
-  ]
-}
+{"access_token":"<JWT>","session_id":"<UUID>"}
 ```
 
-### GET /chat/history/{session_id}
+**Errors:** `401` for an unknown username or incorrect password (`Invalid credentials`); `422` for request validation errors.
 
-Returns chat history for the authenticated user and the requested session ID. Results are ordered by conversation timestamp ascending.
+**Behavior:** Passwords are checked against the stored password hash. Each successful login receives a fresh session ID; chat-history endpoints derive the session from the JWT rather than trusting a client-supplied session ID.
 
-The authenticated user ID is included in the database filter, so a session ID belonging to another user does not grant access to that user's history.
+### `POST /auth/register`
 
-**Failure:** `404 Not Found` when no chat history exists for the authenticated user and requested session.
+Creates a normal user account.
 
----
+**Authentication/role:** Public, subject to the `allow_user_registration` setting.
+
+**Request JSON**
+
+```json
+{"username":"new_user","password":"<password>"}
+```
+
+**Success `200 OK`**
+
+```json
+{"status":"success","message":"Registration successful."}
+```
+
+**Errors:** `403` if registration is disabled; `409` if the username already exists; `422` for invalid input.
+
+**Behavior:** The password is hashed before persistence and the role is set to `user`. The setting defaults to enabled when no persisted value exists.
+
+### `POST /auth/validate-token`
+
+Checks a token supplied in the request body. This endpoint is distinct from the Bearer-token dependencies used by protected routes.
+
+**Authentication/role:** Public; token is supplied in JSON.
+
+**Request JSON**
+
+```json
+{"token":"<JWT>"}
+```
+
+**Response `200 OK`**
+
+Valid token:
+
+```json
+{"valid":true,"user_id":1,"username":"example","role":"user"}
+```
+
+Invalid/expired token:
+
+```json
+{"valid":false}
+```
+
+**Important:** This endpoint reports token claims; protected endpoints additionally load the user from the database and enforce role checks where applicable.
+
+## Chat history and message persistence
+
+The Auth Service persists conversations in `chat_history` and individual messages in `chat_messages`. A conversation is associated with a user and the session ID in the JWT. Message roles used by the current persistence path are `user` and `chatbot`.
+
+### `POST /auth/chat/history`
+
+Stores a user message and, when supplied, its chatbot response.
+
+**Authentication/role:** Authenticated user; any role. Non-admin users are blocked during maintenance mode.
+
+**Request JSON**
+
+```json
+{"message":"Hello","response":"Hi!"}
+```
+
+`response` is optional. Do not send `session_id` or `sender`; these are not accepted as the source of identity/session for this route.
+
+**Success `200 OK`:** A `ChatResponse` object representing the conversation, with fields such as `id`, `session_id`, `user_id`, `timestamp`, and `messages`. Each message includes `id`, `chat_id`, `role`, `content`, and `created_at`.
+
+**Errors:** `401` for invalid/expired JWT or missing required token claims; `400` if `message` exceeds configured `max_message_length`; `503` for non-admin users when `maintenance_mode` is enabled; `422` for invalid request shape.
+
+**Behavior:** Defaults maximum message length to 5000 characters if the setting is missing or invalid. Reuses the conversation matching both authenticated user ID and JWT session ID; creates a conversation on the first turn. Persists the user message and persists `response` only when it is truthy/present.
+
+### `GET /auth/chat/history`
+
+Returns the authenticated user's conversations for the session represented by the JWT.
+
+**Authentication/role:** Authenticated user; any role.
+
+**Parameters:** None. Session and user identity come from the JWT.
+
+**Success `200 OK`:** JSON array of `ChatResponse` conversation objects, ordered by conversation timestamp ascending. Each conversation includes associated messages.
+
+**Errors:** `401` for invalid/expired JWT or missing user/session claims; `404` when no history exists for the authenticated user and session (`No chat history found for this session`).
+
+**Isolation:** Query filters on both `user_id` and `session_id`. Supplying another user's session ID in a URL is not part of this route and cannot override JWT-derived scope.
 
 ## Administrative API
 
-All administrator-management endpoints require administrator authorization through `require_admin`. The public settings endpoint below is intentionally unauthenticated because it exposes only the allowlisted settings needed by the login, registration, and chatbot pages.
+All routes in this section require a valid JWT and the `admin` role via `require_admin`, unless explicitly marked public. A non-admin receives `403` (`Admin access required`).
 
-### GET /admin/dashboard
+### Dashboard
 
-Returns the current administrator dashboard summary, including total users, total conversations, total messages, active users, the five most recently created users, the five most recent conversations, and seven days of activity data.
+#### `GET /auth/admin/dashboard`
 
-The response has the following structure:
+Returns dashboard summary data.
 
-```json
-{
-  "status": "success",
-  "admin": "admin_username",
-  "role": "admin",
-  "stats": {
-    "users": 0,
-    "conversations": 0,
-    "messages": 0,
-    "active_users": 0
-  },
-  "recent_users": [
-    {
-      "id": 1,
-      "username": "username",
-      "role": "user"
-    }
-  ],
-  "recent_conversations": [
-    {
-      "id": 1,
-      "user_id": 1,
-      "user": "username",
-      "date": "<timestamp>",
-      "session_id": "<UUID>"
-    }
-  ],
-  "activity": {
-    "labels": ["Sep 17", "Sep 18"],
-    "conversations": [0, 0],
-    "messages": [0, 0]
-  }
-}
-```
+**Parameters/body:** None.
 
-`active_users` means distinct users with at least one `chat_history` record; it is not a rolling last-24-hours metric. `recent_users` contains at most five users ordered by descending user ID. `recent_conversations` contains at most five conversations ordered by descending conversation timestamp. The activity arrays always cover the last seven calendar days in the analytics timezone and use `Mon DD` labels. Conversation activity is counted from `chat_history.timestamp`; message activity counts `chat_messages` joined to those conversations by `chat_id`.
-
-### GET /admin/users
-
-Returns the user list.
-
-### POST /admin/users
-
-Creates a user from an administrator request. The supplied password is hashed before storage.
-
-### PUT /admin/users/{user_id}/role
-
-Updates a user's role.
-
-### DELETE /admin/users/{user_id}
-
-Administrators can permanently delete a user account.
-
-The operation prevents:
-
-- an administrator from deleting their own account;
-- deletion of the last administrator account.
-
-The endpoint returns the deleted user ID and username on success. Database cascades remove associated database records where configured. Physical encrypted files are separate storage objects and are not removed merely by a database cascade.
-
-### GET /admin/users/search?q={query}
-
-Searches users by username using a case-insensitive partial match.
-
-### GET /admin/chats
-
-Returns administrative chat-history summaries ordered by newest conversation timestamp first. Each item contains:
+**Success `200 OK`**
 
 ```json
 {
-  "id": 1,
-  "user_id": 1,
-  "user": "username",
-  "date": "<timestamp>",
-  "session_id": "<UUID>",
-  "messages": 2,
-  "status": "Completed"
+  "status":"success",
+  "admin":"admin_username",
+  "role":"admin",
+  "stats":{"users":0,"conversations":0,"messages":0,"active_users":0},
+  "recent_users":[{"id":1,"username":"username","role":"user"}],
+  "recent_conversations":[{"id":1,"user_id":1,"user":"username","date":"<timestamp>","session_id":"<UUID>"}],
+  "activity":{"labels":["Sep 17"],"conversations":[0],"messages":[0]}
 }
 ```
 
-The message count is calculated from `chat_messages` for each conversation. The username is obtained through the `ChatHistory` → `User` join.
+**Semantics:** `active_users` means distinct users with at least one conversation, not activity in the last 24 hours. `recent_users` contains up to five users ordered by descending user ID; `recent_conversations` contains up to five conversations ordered newest first. `activity` covers seven calendar days in `Asia/Kolkata`, with conversation counts based on `chat_history.timestamp` and message counts based on messages joined to those conversations.
 
-### GET /admin/users/{user_id}/chats/{chat_id}/messages
+### User administration
 
-Returns all messages for one administrative chat view. The query first verifies that the supplied `chat_id` belongs to the supplied `user_id`. Messages are then returned in ascending `ChatMessage.id` order.
+#### `GET /auth/admin/users`
 
-**Failure:** `404 Not Found` with `Chat not found` when the chat/user association does not exist.
+Lists user records. Admin only. No query parameters. Returns a JSON array of user objects. `401` for invalid authentication; `403` for non-admin.
 
-The endpoint is used by the Admin Chat Details modal to display message role, content, and creation time.
+#### `POST /auth/admin/users`
 
-### GET /admin/users/{user_id}/chats
+Creates a user from an admin request. Admin only.
 
-Retrieves all chat conversations belonging to the specified user from an administrator context.
+**Request:** `CreateUserRequest` with `username`, `password`, and `role` (see `auth_service/app/schemas/admin.py` for the exact schema constraints).
 
-The endpoint uses the user_id path parameter to identify the user and returns the user's chat history/conversation records. It does not accept or create a session_id from the client.
+**Success:** JSON representation of the created user. Password is hashed; the operation records an audit event.
 
-This endpoint is intended for administrative retrieval and is distinct from the user chat persistence endpoint, POST /chat/history, which derives the authenticated user's session_id from the JWT.
+**Errors:** `400` when username already exists; `422` for schema validation; `403` for non-admin.
 
-### DELETE /admin/chat/history/{session_id}
+#### `PUT /auth/admin/users/{user_id}/role`
 
-Deletes chat-history records associated with the specified session. Associated messages are removed through the configured database relationship.
+Changes a user's role. Admin only.
 
-### GET /admin/settings/public
+**Path:** `user_id` integer.
 
-Returns the public application settings used by the browser-facing login, registration, and chatbot pages. The endpoint exposes only these keys:
+**Request:** `UpdateRoleRequest` containing the new `role`; consult `auth_service/app/schemas/admin.py` for allowed values.
 
-- `application_name`
-- `max_message_length`
-- `maintenance_mode`
-- `allow_user_registration`
+**Success:** The current handler commits the change and refreshes the user; the response body is not explicitly returned by the route.
 
-Missing persisted values are filled from the backend defaults. The response is not administrator-protected.
+**Errors:** `404` if the user does not exist; `422` for invalid input. The change is audit-logged.
+
+#### `DELETE /auth/admin/users/{user_id}`
+
+Permanently deletes a user account. Admin only.
+
+**Success `200 OK`**
 
 ```json
-{
-  "application_name": "ChatBot",
-  "max_message_length": 5000,
-  "maintenance_mode": false,
-  "allow_user_registration": true
-}
+{"status":"deleted","user_id":1,"username":"deleted_user"}
 ```
 
-### POST /register
+**Errors:** `404` if missing; `400` if attempting to delete the current admin, the last administrator, or a user still referenced by records; `403` for non-admin. Database cascades apply only where configured. This does not itself guarantee removal of separate physical files from file storage.
 
-Creates a normal user account when public registration is enabled. The request contains `username` and `password`; the password is hashed before storage and the new account is assigned the `user` role.
+#### `GET /auth/admin/users/search?q={query}`
 
-**Request**
+Case-insensitive partial username search. Admin only. Required query parameter `q`. Returns a JSON array of matching user records.
+
+### Administrative chat history
+
+#### `GET /auth/admin/chats`
+
+Lists conversation summaries with pagination and optional search.
+
+**Query parameters:** `page` (integer, default `1`, minimum `1`), `page_size` (integer, default `20`, range `1–100`), `search` (optional string matching chat ID, user ID, username, or session ID).
+
+**Success `200 OK`**
 
 ```json
-{
-  "username": "new_user",
-  "password": "<password>"
-}
+{"items":[{"id":1,"user_id":1,"user":"username","date":"<timestamp>","session_id":"<UUID>","messages":2,"status":"Completed"}],"page":1,"page_size":20,"total":1,"total_pages":1}
 ```
 
-**Successful response**
+#### `GET /auth/admin/users/{user_id}/chats`
+
+Lists conversations for the specified user, newest first. Admin only. `user_id` is an integer path parameter. Returns a JSON array of chat response objects. `404` if the user does not exist.
+
+#### `GET /auth/admin/users/{user_id}/chats/{chat_id}/messages`
+
+Returns messages for a specific conversation in ascending message ID order. Admin only. The handler first checks that the `chat_id` belongs to the supplied `user_id`.
+
+**Success:** JSON array of message objects (`id`, `chat_id`, `role`, `content`, `created_at`). **Error:** `404` with `Chat not found` if the association does not exist.
+
+#### `DELETE /auth/admin/chat/history/{session_id}`
+
+Deletes conversation records for the specified session. Admin only.
+
+**Success:** `{"detail":"Chat history for session '<session_id>' has been deleted"}`.
+
+**Errors:** `404` if no history exists for the session; `403` for non-admin. Associated message deletion depends on configured database relationships/cascades.
+
+## Analytics API
+
+All analytics routes require admin authorization and accept optional ISO date query parameters `start_date=YYYY-MM-DD` and `end_date=YYYY-MM-DD`. Analytics use `Asia/Kolkata`. If `end_date` is omitted, it defaults to today; if `start_date` is omitted, it defaults to 29 days before the selected end date (a 30-day inclusive range). Invalid dates are rejected by FastAPI validation.
+
+### `GET /auth/admin/analytics/overview`
+
+Returns an object containing `start_date`, `end_date`, `total_users`, `active_users`, `total_chats`, `total_sessions`, `total_messages`, `average_messages_per_chat`, and `today_chats`. `total_users` is the overall user count; period-sensitive counts are calculated from conversations/messages in the selected range. `today_chats` uses the current analytics timezone.
+
+### `GET /auth/admin/analytics/chat-activity`
+
+Returns a JSON array with one item per day in the inclusive selected range: `date`, `chats`, `users`, and `messages`. Days without data are included with zero counts.
+
+### `GET /auth/admin/analytics/message-activity`
+
+Returns a JSON array with one item per day: `date` and `messages`, including zero-count days.
+
+### `GET /auth/admin/analytics/top-users`
+
+Returns users ranked by activity within the selected date range. Optional `limit` defaults to `10` and must be `1–100`. Each item includes user identity and chat/message counts as implemented by the query.
+
+### `GET /auth/admin/analytics/chat-statistics`
+
+Returns aggregate chat statistics for the selected date range. See `auth_service/app/routes/admin_analytics.py` for the exact response fields because this endpoint's response is defined directly by the route rather than a shared response schema.
+
+### `GET /auth/admin/analytics/hourly-activity`
+
+Returns chat activity grouped by hour for the selected date range. Exact field names are defined in `auth_service/app/routes/admin_analytics.py`.
+
+**Errors for analytics:** `401` invalid/expired JWT; `403` non-admin; `422` invalid query values.
+
+## System settings
+
+### `GET /auth/admin/settings/public`
+
+Public, unauthenticated endpoint for settings needed by login, registration, and chatbot pages. Only the allowlisted keys are returned; internal/unrecognized settings are not exposed.
+
+**Success `200 OK`**
 
 ```json
-{
-  "status": "success",
-  "message": "Registration successful."
-}
+{"application_name":"ChatBot","max_message_length":5000,"maintenance_mode":false,"allow_user_registration":true}
 ```
 
-**Failures**
+Missing values use defaults. Types: `application_name` string, `max_message_length` integer, the two flags boolean.
 
-- `403 Forbidden` when `allow_user_registration` is disabled.
-- `409 Conflict` when the username already exists.
-- FastAPI validation errors when the request body does not satisfy `RegisterRequest`.
+### `GET /auth/admin/settings`
 
-### GET /admin/settings
-
-Returns the current administrator-configurable application settings. Missing persisted settings are populated from backend defaults. The response has the form:
+Admin only. Returns all persisted settings plus defaults for known settings:
 
 ```json
-{
-  "status": "success",
-  "settings": {
-    "application_name": "ChatBot",
-    "max_message_length": 5000,
-    "maintenance_mode": false,
-    "allow_user_registration": true
-  }
-}
+{"status":"success","settings":{"application_name":"ChatBot","max_message_length":5000,"maintenance_mode":false,"allow_user_registration":true}}
 ```
 
-The endpoint requires administrator authorization. Boolean settings are serialized as booleans and `max_message_length` is serialized as an integer.
+### `PUT /auth/admin/settings`
 
-### PUT /admin/settings
+Admin only. Updates one or more known settings.
 
-Updates one or more administrator-configurable settings. The accepted fields are:
+**Supported request fields:**
 
 - `application_name`: string, 1–100 characters
 - `max_message_length`: integer, 1–100000
 - `maintenance_mode`: boolean
 - `allow_user_registration`: boolean
 
-Unknown fields are rejected by the request schema. A successful update returns the list of setting keys that were updated and records an administrative audit event.
+Unknown fields are rejected by the request schema. Send only fields to change.
+
+**Success `200 OK`**
 
 ```json
-{
-  "status": "success",
-  "updated": [
-    "application_name",
-    "max_message_length",
-    "maintenance_mode",
-    "allow_user_registration"
-  ]
-}
+{"status":"success","updated":["maintenance_mode"]}
 ```
 
-### GET /admin/logs
+The handler records an administrative audit event. When maintenance mode is enabled, non-admin chat-history writes return `503`; admin users are not blocked by this check. Registration returns `403` when registration is disabled. The public settings endpoint continues to expose only the four allowlisted settings.
 
-Returns administrator audit logs with filtering, search, and pagination. Query
-parameters are:
+## Administrative audit logs
 
-```text
-page=1
-page_size=50
-level=all
-search=<optional>
-```
+### `GET /auth/admin/logs`
 
-`page_size` is limited to 1–200. `level` can be `all` or a specific stored log
-level. Search performs a case-insensitive match against the action, details, and username fields. Results are ordered newest first.
+Admin only. Lists audit records newest first.
+
+**Query parameters:** `page` default `1` (minimum `1`); `page_size` default `50` (range `1–200`); `level` default `all`; `search` optional case-insensitive search across action, details, and username.
+
+**Response:**
 
 ```json
-{
-  "items": [
-    {
-      "id": 1,
-      "timestamp": "<timestamp>",
-      "user_id": 1,
-      "user": "admin",
-      "level": "info",
-      "action": "Updated system settings",
-      "details": "application_name, max_message_length, maintenance_mode, allow_user_registration"
-    }
-  ],
-  "page": 1,
-  "page_size": 50,
-  "total": 1,
-  "total_pages": 1
-}
+{"items":[{"id":1,"timestamp":"<timestamp>","user_id":1,"user":"admin","level":"info","action":"Updated system settings","details":"maintenance_mode"}],"page":1,"page_size":50,"total":1,"total_pages":1}
 ```
 
-### GET /admin/logs/export
+The accepted level filtering is based on stored values; `all` disables the level filter.
 
-Exports audit logs as CSV. The `level` and `search` filters use the same semantics as `GET /admin/logs`. The generated file is returned as `system_logs.csv` with columns `Timestamp`, `User`, `Level`, `Action`, and `Details`.
+### `GET /auth/admin/logs/export`
 
-### POST /admin/logs
+Admin only. Accepts the same `level` and `search` filters as the log list and streams a CSV download named `system_logs.csv`. Columns: `Timestamp`, `User`, `Level`, `Action`, `Details`.
 
-Creates a manual administrative log entry. The accepted levels are `info`,
-`warning`, and `error`. `action` is required; `details` is optional. Invalid log levels or missing actions return `400 Bad Request`.
+### `POST /auth/admin/logs`
 
----
+Creates a manual audit log entry. Admin only.
 
-## Administrative Analytics API
-
-All `/admin/analytics/*` endpoints require administrator authorization through
-`require_admin`.
-
-The analytics endpoints accept these optional query parameters:
-
-```text
-start_date=YYYY-MM-DD
-end_date=YYYY-MM-DD
-```
-
-If `end_date` is omitted, the backend uses the current date in the
-`Asia/Kolkata` timezone. If `start_date` is omitted, it defaults to 29 days
-before the selected end date. The resulting range is inclusive of both
-dates.
-
-### GET /admin/analytics/overview
-
-Returns the selected date range and aggregate user/chat/session/message
-metrics.
+**Request JSON**
 
 ```json
-{
-  "start_date": "YYYY-MM-DD",
-  "end_date": "YYYY-MM-DD",
-  "total_users": 0,
-  "active_users": 0,
-  "total_chats": 0,
-  "total_sessions": 0,
-  "total_messages": 0,
-  "average_messages_per_chat": 0,
-  "today_chats": 0
-}
+{"level":"info","action":"Operational note","details":"Optional detail"}
 ```
 
-`total_users` is the current total user count; the other range-based
-conversation metrics are calculated from the selected period. `today_chats`
-is calculated for the current date in the analytics timezone.
+Allowed levels are `info`, `warning`, and `error`; `action` is required and `details` is optional. Invalid levels or missing action return `400`. The exact schema is in `auth_service/app/schemas/admin.py`.
 
-### GET /admin/analytics/chat-activity
+## File management API
 
-Returns one entry for each date in the selected range, including dates with
-zero activity.
+The File Service authenticates JWTs independently using the configured `SECRET_KEY`. File ownership and permissions are enforced in the service. Files are encrypted before storage; download endpoints decrypt only after authorization.
+
+### `GET /files` and `GET /files/`
+
+Lists files visible to the authenticated user. The root and slash forms are implemented; the empty path variant is excluded from the OpenAPI schema. Requires Bearer JWT. Returns a JSON array of `FileResponse` objects. Invalid/expired JWT returns `401`.
+
+### `POST /files/upload`
+
+Uploads and encrypts a file.
+
+**Authentication:** Bearer JWT required.
+
+**Request:** `multipart/form-data` with required field `file`.
+
+**Success `200 OK`**
 
 ```json
-[
-  {
-    "date": "YYYY-MM-DD",
-    "chats": 0,
-    "users": 0,
-    "messages": 0
-  }
-]
+{"id":41,"filename":"report.pdf","status":"<stored status>"}
 ```
 
-### GET /admin/analytics/message-activity
+**Errors:** `413` when file content exceeds 100 MiB; `401` for invalid/expired JWT; `422` if the file field is missing/invalid. Nginx is configured with a 100 MiB client body limit; proxy and application limits should remain aligned.
 
-Returns daily message counts for the selected range, including zero-activity
-dates.
+### `GET /files/{file_id}/download`
+
+Downloads and decrypts a file.
+
+**Authentication:** Bearer JWT required. Owner access is allowed; a non-owner requires a matching `file_permissions` record with `READ` permission.
+
+**Success `200 OK`:** Raw file bytes with the stored MIME type (or `application/octet-stream`) and `Content-Disposition: attachment` using the original filename.
+
+**Errors:** `401` invalid/expired JWT; `403` if neither owner nor an authorized `READ` recipient; `404` missing file, missing stored file; `500` missing encryption key or decryption failure.
+
+### `DELETE /files/{file_id}`
+
+Deletes a file through the file service. Requires Bearer JWT. The service's `delete_file` operation enforces user scope; a missing/inaccessible record returns `404`. Success:
 
 ```json
-[
-  {
-    "date": "YYYY-MM-DD",
-    "messages": 0
-  }
-]
+{"message":"File deleted successfully","id":41}
 ```
 
-### GET /admin/analytics/top-users
+Review `file_service/app/services/file_service.py` for storage cleanup behavior before relying on deletion as a secure physical erasure guarantee.
 
-Returns users with chat activity during the selected range, ordered by
-conversation count descending.
+### `POST /files/{file_id}/share`
 
-Optional parameter:
+Shares a file directly with another registered user. Requires Bearer JWT and ownership of the file.
 
-```text
-limit=10
-```
-
-`limit` must be between 1 and 100 and defaults to 10.
+**Request JSON**
 
 ```json
-[
-  {
-    "user_id": 1,
-    "username": "username",
-    "chats": 0,
-    "messages": 0
-  }
-]
+{"user_id":35,"permission":"READ"}
 ```
 
-### GET /admin/analytics/chat-statistics
-
-Returns aggregate conversation statistics for the selected range.
+**Success `200 OK`**
 
 ```json
-{
-  "total_chats": 0,
-  "total_messages": 0,
-  "total_sessions": 0,
-  "average_chats_per_session": 0,
-  "average_messages_per_chat": 0
-}
+{"message":"File shared","file_id":41,"shared_with":35,"permission":"READ"}
 ```
 
-### GET /admin/analytics/hourly-activity
+**Errors:** `404` file not found; `403` if the caller is not the owner; `422` invalid request. Supported permission values should be taken from `file_service/app/schemas/file.py`; the current download authorization specifically checks `READ`.
 
-Returns chat counts grouped by hour in the analytics timezone. The response
-always contains all 24 hours, using zero for hours with no activity.
+### `POST /files/{file_id}/share-link`
+
+Creates a token-based share link. Requires Bearer JWT and file ownership.
+
+**Request JSON**
 
 ```json
-[
-  {
-    "hour": 0,
-    "chats": 0
-  }
-]
+{"expires_at":null,"max_downloads":1}
 ```
 
-The returned `hour` values range from `0` through `23`.
+Both fields are governed by `ShareLinkCreate`; `expires_at` may be null, and `max_downloads` may be null for no configured count limit.
 
-### Analytics Frontend Behavior
+**Success `200 OK`**
 
-The Admin analytics service stores the selected date range in memory and
-passes it to analytics requests. The analytics section fetches all six
-datasets in parallel when the Analytics section is selected. Analytics initialization is event-driven: navigation emits `analytics:load-requested`, which triggers the analytics service to load the current date range. The analytics event module no longer performs an unconditional initial fetch during initialization.
+```json
+{"id":26,"file_id":41,"url":"/files/shared/<secure-token>","expires_at":null,"max_downloads":1,"download_count":0}
+```
 
-Analytics export generates a CSV file containing overview metrics, daily chat
-activity, and top-user results. The export is generated in the browser and
-does not introduce a separate backend export endpoint.
+The token is generated using `secrets.token_urlsafe(32)`. A supplied expiration must be in the future; otherwise `400`. Missing file returns `404`; non-owner returns `403`.
 
----
+### `GET /files/shared/{token}`
 
-## Delete User
+Downloads a file using the share-link token. No JWT is required; possession of the token is the access credential.
 
-### DELETE /users/{user_id}
+**Success `200 OK`:** Decrypted file bytes as an attachment. A successful download increments `download_count` and records a `SHARE_LINK` download audit event.
 
-Administrators can permanently delete a user account.
+**Errors:** `404` unknown token or missing file; `410` expired link or exhausted download limit; `500` missing encryption key or decryption failure. **Implementation note:** The current route's expiration check should be exercised in tests when `expires_at` is null; inspect/fix that branch before treating unlimited/no-expiry links as production-ready.
 
-User deletion is a hard delete. When a user is deleted, PostgreSQL
-cascading foreign-key constraints automatically remove data owned by
-or directly associated with that user.
+## File service utility routes
 
-The following data is deleted:
+These are direct File Service routes and may not be proxied through Nginx unless separately configured.
 
-- User account
-- Chat history
-- Files owned by the user
-- File access logs
-- File permissions
-- Shared links created by the user
+| Method | Route | Authentication | Purpose / response |
+|---|---|---|---|
+| `GET` | `/` | Public | `{"service":"File Encryption Service","status":"running"}` |
+| `GET` | `/health` | Public | `{"status":"healthy"}` |
+| `GET` | `/health/db` | Database connectivity check | Executes `SELECT 1`; returns `{"database":"connected","result":1}` on success or a failure object. Do not expose this diagnostic publicly in production. |
 
-The API prevents:
+## Error and security notes
 
-- An administrator from deleting their own account
-- Deletion of the last administrator account
+- `401 Unauthorized`: missing/invalid/expired JWT or missing identity/session claims.
+- `403 Forbidden`: authenticated but lacks required role, ownership, or file permission.
+- `404 Not Found`: requested record is missing or intentionally not visible in the caller's scope.
+- `409 Conflict`: registration username already exists.
+- `410 Gone`: share link expired or download limit reached.
+- `413 Payload Too Large`: upload exceeds 100 MiB.
+- `422 Unprocessable Entity`: FastAPI request validation failure.
+- `503 Service Unavailable`: non-admin attempts to persist a chat turn during maintenance mode.
 
-The operation is permanent and cannot be undone through the application.
-
----
-
-## Frontend API Client
-
-The Admin frontend uses `frontend/js/admin_api.js` with:
-
-- base URL `/auth`;
-- JSON request bodies;
-- bearer-token injection from `localStorage.authToken`;
-- a 10-second request timeout;
-- one retry for retryable GET failures such as timeout/network errors;
-- automatic token removal and redirect to `/login.html` on HTTP 401;
-- structured API errors exposing `status` and the original parsed response data;
-- formatted Pydantic validation errors when the response contains a validation-error list;
-- `null` return handling for HTTP 204 responses.
-
-The client also exposes `getSettings()` and `updateSettings()` wrappers for the
-administrative settings endpoints.
-
-The client exposes `get`, `post`, `put`, `patch`, and `delete` helpers.
-
----
-
-## Current API Design Notes
-
-- Session identity for normal chat persistence is server-derived from the JWT.
-- Chat messages are stored in `chat_messages`; conversation metadata is stored in `chat_history`.
-- A conversation is reused for repeated messages within the same authenticated user/session.
-- Administrative chat discovery and message retrieval are separate endpoints.
-- Administrative endpoints require an administrator role.
-- Share-link file access remains intentionally unauthenticated and is outside the Auth Service chat API changes documented here.
-- `GET /admin/settings/public` is intentionally unauthenticated but returns only the allowlisted public settings.
-- Chat persistence enforces `maintenance_mode` and `max_message_length` on the server. During maintenance, non-admin users receive `503`; messages exceeding the configured maximum receive `400`.
+For exact Pydantic field constraints and complete response schemas, consult the route and schema modules cited above. Do not infer additional routes from frontend labels or architecture diagrams alone.

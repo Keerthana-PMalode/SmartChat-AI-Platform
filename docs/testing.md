@@ -1,2027 +1,258 @@
-# Testing Guide
-
-## 1. Environment Verification
-## 2. Authentication Testing
-## 3. JWT Authorization Testing
-## 4. Chat History Isolation Testing
-## 5. File Upload Testing
-## 6. File Download Testing
-## 7. File Sharing Testing
-## 8. File Permission Testing
-## 9. Audit Log Testing
-## 10. Encryption Testing
-## 11. IP Address Logging Testing
-## 12. Nginx Routing Testing
-## 13. Database Verification
-## 14. Docker Service Testing
-## 15. Security Testing
-## 16. Session-Aware Chat Testing
-## 17. Administrative Chat History Testing
-## 18. Administrative Users UI Testing
-## 19. Admin Frontend Navigation and Session Cleanup Testing
-## 20. Administrative Dashboard Testing
-## 21. Administrative Analytics Testing
-## 22. Administrative Settings and System Logs Testing
-## 23. Public Registration and Chat Runtime Settings Testing
-## 24. Updated Verification Summary
-
-
-## 4. Chat History Isolation Testing
-
-Chat history is restricted to authenticated users and is isolated by
-`user_id`.
-
-### 4.0 Chat History Storage Model
-
-Chat history is stored using:
-
-```text
-chat_history
-    │
-    └── 1:N
-          ▼
-     chat_messages
-```
-
-A chat_history record contains:
-
-```text
-id
-user_id
-session_id
-timestamp
-```
-
-A chat_messages record contains:
-
-```text
-id
-chat_id
-role
-content
-created_at
-```
-
-The supported roles are:
-
-```text
-user
-chatbot
-```
-
-For example, storing user message:
-
-```text
-Hiiiii
-```
-
-Chatbot response:
-
-```text
-Helloooo
-```
-should produce:
-
-chat_history
-
-```text
-id = 1
-user_id = 38
-session_id = "chat_test_UserA"
-```
-
-chat_messages
-
-```text
-id = 1
-chat_id = 1
-role = "user"
-content = "Hiiiii"
-
-id = 2
-chat_id = 1
-role = "chatbot"
-content = "Helloooo"
-```
-
-### 4.0.1 Verify Chat Persistence
-
-After a successful Store Chat request, verify the chat-history record:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, session_id, user_id, timestamp
-      FROM chat_history
-      ORDER BY id DESC
-      LIMIT 10;"
-```
-
-Then verify its messages:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, chat_id, role, content, created_at
-      FROM chat_messages
-      WHERE chat_id = <CHAT_ID>
-      ORDER BY id;"
-```
-
-**Expected Result:**
-
-The chat-history record should contain the authenticated user's ID and the
-requested session ID.
-
-The associated chat_messages records should contain:
-
-```text
-role = user
-content = original user message
-
-and:
-
-role = chatbot
-content = chatbot response
-```
-
-### 4.0.2 Verify Chat-to-Message Relationship
-
-Verify that every returned message belongs to the expected chat:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT h.id AS chat_id,
-             h.session_id,
-             h.user_id,
-             m.id AS message_id,
-             m.chat_id,
-             m.role,
-             m.content
-      FROM chat_history h
-      JOIN chat_messages m
-        ON m.chat_id = h.id
-      WHERE h.id = <CHAT_ID>
-      ORDER BY m.id;"
-```
-
-**Expected Result:**
-
-| chat_id | session_id | user_id | message_id | chat_id | role | content |
-|---:|---|---:|---:|---:|---|---|
-| 1 | chat_test_UserA | 38 | 1 | 1 | user | Hiiiii |
-| 1 | chat_test_UserA | 38 | 2 | 1 | chatbot | Helloooo |
-
-### 4.0.3 Verify Chat Message Cascade
-
-The chat_messages.chat_id foreign key references
-chat_history.id using ON DELETE CASCADE.
-
-Create or identify a test chat and record its message count:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT count(*)
-      FROM chat_messages
-      WHERE chat_id = <CHAT_ID>;"
-```
-
-Delete the chat-history record through the appropriate application/API
-operation.
-
-Then verify:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT count(*)
-      FROM chat_messages
-      WHERE chat_id = <CHAT_ID>;"
-```
-
-**Expected Result:**
-
-- 0
-
-This confirms that deleting the parent chat_history record also deletes
-the associated chat_messages records.
-
-### 4.0.4 Verify API Response Structure
-
-A successful Store Chat request should return the chat session together with
-its associated messages.
-
-Example:
-
-```json
-{
-  "id": 1,
-  "session_id": "chat_test_UserA",
-  "user_id": 38,
-  "timestamp": "2026-09-04T12:53:54.622459Z",
-  "messages": [
-    {
-      "id": 1,
-      "chat_id": 1,
-      "role": "user",
-      "content": "Hiiiii",
-      "created_at": "2026-09-04T12:53:54.622459Z"
-    },
-    {
-      "id": 2,
-      "chat_id": 1,
-      "role": "chatbot",
-      "content": "Helloooo",
-      "created_at": "2026-09-04T12:53:54.622459Z"
-    }
-  ]
-}
-```
-
-The response confirms that:
-
-- The chat is associated with the expected user_id.
-- The requested session_id is preserved.
-- Individual user and chatbot messages are stored separately.
-- Each message references the parent chat through chat_id.
-
----
-
-### 4.1 Authenticated Chat History Request
-
-The server extracts both the user_id and session_id from the authenticated
-JWT. The client does not provide the session ID as part of the request URL.
-
-**Request**
-
-```http
-GET /chat/history
-Authorization: Bearer <JWT>
-```
-The chat-history isolation model is:
-
-```text
-GET /chat/history
-        │
-        ▼
-JWT
- ├── user_id
- └── session_id
-        │
-        ▼
-ChatHistory
- WHERE user_id = JWT.user_id
- AND session_id = JWT.session_id
-```
-
-**Result**
-
-- Status: 200 OK
-- User ID: 1
-- Session ID: 618dd92e-84cd-47fd-8869-63d18ada80f3
-- Chat history returned successfully
-- Chat ID: 24
-- Messages returned: 2
-
-** Response **
-
-```json
-[
-  {
-    "id": 24,
-    "session_id": "618dd92e-84cd-47fd-8869-63d18ada80f3",
-    "user_id": 1,
-    "timestamp": "2026-09-10T15:22:11.121607Z",
-    "messages": [
-      {
-        "id": 65,
-        "chat_id": 24,
-        "role": "user",
-        "content": "Hiiiiiiiiiiiiiiiiiiiiiiii",
-        "created_at": "2026-09-10T15:22:11.121607Z"
-      },
-      {
-        "id": 66,
-        "chat_id": 24,
-        "role": "chatbot",
-        "content": "Helloooooooooooooooooooooooooooooooooooo",
-        "created_at": "2026-09-10T15:22:11.121607Z"
-      }
-    ]
-  }
-]
-```
-
-**Verification**
-
-The request was successfully authenticated using the JWT. The server extracted
-the authenticated user's user_id and session_id and returned the
-ChatHistory record matching both values.
-
-The returned conversation contains:
-
-```text
-chat_history.id = 24
-chat_history.user_id = 1
-chat_history.session_id = 618dd92e-84cd-47fd-8869-63d18ada80f3
-```
-
-The conversation contains two associated messages:
-
-```text
-Message 65
-    chat_id = 24
-    role    = user
-    content = Hiiiiiiiiiiiiiiiiiiiiiii
-
-Message 66
-    chat_id = 24
-    role    = chatbot
-    content = Helloooooooooooooooooooooooooooooooooooo
-```
-
-This confirms that authenticated users can retrieve the chat history associated
-with their own authenticated user ID and session ID.
-
-It also confirms that the current API uses the JWT-derived session rather than
-accepting a client-supplied session_id in the request URL.
-
----
-
-### 4.2 Unauthenticated Chat History Request
-
-The same chat-history endpoint was accessed without providing a JWT.
-
-**Request**
-
-```http
-GET /chat/history/registered-test-session-20260830-001
-```
-
-**Result**
-
-```json
-HTTP 401 Unauthorized
-{
-  "detail": "Not authenticated"
-}
-```
-
-**Verification**
-
-The request was rejected because no valid JWT was provided.
-
-This confirms that unauthenticated or guest users cannot access chat history.
-
----
-
-### 4.3 Cross-User Chat History Isolation
-
-User A creates a chat session:
-
-```http
-session_id = abc123
-user_id = User A
-```
+# SmartChat AI Platform — Testing Guide
+
+## 1. Purpose and testing strategy
 
-User B attempts to retrieve User A's chat history:
-
-```http
-GET /chat/history/abc123
-Authorization: Bearer <User B JWT>
-```
-
-**Expected Result**
-
-User B cannot retrieve User A's chat history.
+Test SmartChat across service boundaries: frontend → Nginx → Auth Service/File Service/Rasa → PostgreSQL and file storage. Prioritize authentication, authorization, user isolation, encrypted file handling, share-link behavior, settings enforcement, and persisted chat/message correctness.
+
+The supplied project files include `rasa/tests/test_stories.yml`. No complete repository-wide automated test configuration or frontend test runner was identifiable from the supplied archive, so this guide distinguishes executable project-provided test assets from recommended manual/API scenarios. Do not assume a particular `pytest`, npm, or CI command exists unless it is present in the checked-out project.
+
+## 2. Test environment setup
+
+1. Use a disposable development database and development-only secrets.
+2. Confirm `docker compose config` succeeds, then start the stack with the repository's documented Compose workflow.
+3. Confirm containers with `docker compose ps` and inspect service logs.
+4. Use `http://localhost:8081/` for browser-facing checks in the previously documented local setup. Direct API docs may be available at `http://localhost:8000/docs` and `http://localhost:8001/docs` if those ports are published in the current Compose file.
+5. Prepare at least two normal users (A and B) and one administrator. Use synthetic chat messages and disposable test files.
+6. Verify database initialization and File Service Alembic state before testing persistence-sensitive features.
+
+Do not test deletion, encryption-key migration, or schema changes against production data. Back up data before testing migration procedures.
+
+## 3. Test levels
 
-The backend scopes the chat-history query to both:
-
-```text
-session_id = requested session
-AND
-user_id = authenticated user's ID
-```
-
-Since abc123 belongs to User A, no chat history is returned for User B.
-
-**Result**
-
-```json
-HTTP/1.1 404 Not Found
-{
-  "detail": "No chat history found for this session"
-}
-```
-
-This prevents an authenticated user from retrieving another user's chat
-history by supplying that user's session_id.
-
----
+- **Unit/component:** focused functions such as token verification, encryption/decryption, validation, date-range helpers, and file-service operations. Use a test framework only if installed/configured; otherwise run through a small isolated harness rather than inventing a repository command.
+- **API/integration:** call FastAPI endpoints through OpenAPI docs or an HTTP client against the running development services.
+- **Frontend:** exercise pages in a browser and inspect Network/Console panels.
+- **Service integration:** verify Nginx routing, database connectivity, Rasa-to-SDK communication, and storage persistence.
+- **Regression:** repeat the security and core-flow scenarios after changing related code.
 
-## 7. File Sharing Testing
+## 4. Authentication and registration
 
-File sharing supports two distinct mechanisms:
+| Scenario | Steps | Expected result |
+|---|---|---|
+| Valid login | `POST /auth/login` with a valid username/password | `200`; response contains `access_token` and `session_id`. |
+| Wrong password | Login with a known username and wrong password | `401 Invalid credentials`; no token issued. |
+| Unknown username | Login with an unknown username | `401 Invalid credentials`. |
+| New session per login | Log in twice as the same user | Each successful response has a newly generated session UUID; each JWT includes the corresponding session. |
+| Invalid JWT | Send malformed/tampered token to a protected route | `401`; request is not processed as an authenticated user. |
+| Expired JWT | Use an expired token | `401 Invalid or expired token`. |
+| Missing JWT | Omit `Authorization` on protected endpoint | Authentication is rejected, normally `401`. |
+| Token validation endpoint | `POST /auth/validate-token` with valid and invalid token values | `200` with `valid: true` plus identity claims for a valid token; `{"valid":false}` for invalid/expired token. |
+| Password storage | Register a test user and inspect only the stored password-hash field in a controlled DB | Password is not stored as plaintext. Do not print real hashes into shared logs. |
+
+### Registration-specific scenarios
+
+| Scenario | Steps | Expected result |
+|---|---|---|
+| Registration enabled | `POST /auth/register` with unused username/password | `200`, success message; account has role `user`; password is hashed. |
+| Duplicate username | Register same username again | `409 Username already exists.` |
+| Registration disabled | Admin sets `allow_user_registration=false`; attempt registration | `403 User registration is currently disabled.` |
+| Invalid request | Omit required fields or send wrong types | FastAPI validation error, normally `422`. |
+
+## 5. Authorization and administrative APIs
+
+| Scenario | Steps | Expected result |
+|---|---|---|
+| Non-admin dashboard access | Call `/auth/admin/dashboard` as normal user | `403 Admin access required`. |
+| Missing/invalid JWT on admin route | Call any admin endpoint without a valid token | `401`; admin handler is not executed. |
+| Admin user listing | Call `/auth/admin/users` as admin | `200` JSON array of users. |
+| Duplicate admin-created user | `POST /auth/admin/users` with existing username | Current handler returns `400 Username already exists`. |
+| Role update missing user | `PUT /auth/admin/users/{unknown_id}/role` | `404 User not found`. |
+| Prevent self-deletion | Admin attempts `DELETE /auth/admin/users/{own_id}` | `400 Cannot delete your own account`. |
+| Prevent deleting last admin | With one admin, attempt to delete that admin from another admin account where possible in a disposable fixture | `400 Cannot remove the last administrator`. |
+| Admin audit trail | Create user/change role/delete permitted test user | Corresponding administrative audit event is recorded. |
+| Admin chat-user association | Request `/auth/admin/users/{user_id}/chats/{chat_id}/messages` with mismatched user/chat IDs | `404 Chat not found`; messages are not disclosed. |
+| Admin chat deletion | Delete a test session via `/auth/admin/chat/history/{session_id}` | Success detail returned; associated messages are removed according to configured relationships. |
 
-1. Direct user-to-user sharing through `file_permissions`.
-2. Share-link access through `shared_links`.
-
-These mechanisms use different authorization models and should be tested
-independently.
-
-### 7.1 Direct User-to-User File Sharing
-
-An authorized file owner can share a file with another registered user.
-
-**Request**
+## 6. Chat, message persistence, and isolation
 
-```http
-POST /files/{file_id}/share
-Authorization: Bearer <OWNER_JWT>
-Content-Type: application/json
+### Core chat persistence
 
-{
-  "user_id": 35,
-  "permission": "READ"
-}
-```
+1. Log in as User A and retain the JWT/session returned by login.
+2. `POST /auth/chat/history` with `{"message":"test message","response":"test reply"}`.
+3. Confirm a conversation is created for User A and the JWT session, with separate `user` and `chatbot` message rows.
+4. Submit another turn under the same token and verify the existing conversation is reused.
+5. Omit `response` and verify the user message persists without an extra chatbot message.
+6. Restart the relevant container and confirm persisted records remain when using the same database volume.
 
-**Expected Behavior**
+Expected response is a conversation object with identifiers, session/user IDs, timestamp, and message collection. The exact timestamps are generated by the application/database.
 
-The file should be successfully shared with the selected user.
-
-A corresponding file_permissions record should be created.
-
-**Expected Permission Record**
-
-```text
-file_id              = ID of the shared file
-shared_with_user_id  = ID of the recipient
-permission           = READ
-shared_by            = ID of the user performing the share
-```
+### Chat-history isolation
 
-The sharing operation should also create an audit record.
+- **User A reads own history:** `GET /auth/chat/history` with A's token returns only A's conversations for the session in that JWT.
+- **User B cannot read A's history:** log in as B and call the current-session history route; B's JWT scope must not return A's records.
+- **No history:** for a valid user/session with no saved conversation, current implementation returns `404 No chat history found for this session`.
+- **No client-controlled session:** verify that a request body cannot override the session ID; the save schema does not accept client-supplied `session_id` or `sender` as the authority.
+- **Admin inspection:** admin chat-list/detail endpoints may retrieve conversations across users, but a chat ID must match the path's user ID before messages are returned.
+
+### Maintenance mode and message length
 
-**Expected Audit Record**
+| Scenario | Setup/action | Expected result |
+|---|---|---|
+| Maintenance enabled, normal user | Set `maintenance_mode=true`; submit `POST /auth/chat/history` | `503` with maintenance message. |
+| Maintenance enabled, admin | Submit chat-history write as admin | Current handler does not block admin users in this check. |
+| Message at configured limit | Set `max_message_length=N`; send a message of length N | Accepted if otherwise valid. |
+| Message over limit | Send N+1 characters | `400` with maximum-length message. |
+| Missing/invalid stored max length | Use a controlled DB fixture with missing/non-integer setting | Handler falls back to 5000. |
+
+Note: this route persists supplied user and response text; it is not itself the Rasa inference endpoint. Test chatbot inference separately through the Rasa route.
+
+## 7. File upload, encryption, and download
 
-```text
-action        = SHARE
-file_id       = ID of the shared file
-user_id       = ID of the user who performed the share
-share_link_id = NULL
-access_method = AUTHENTICATED
-```
+### Upload
+
+1. Log in and send `POST /files/upload` with multipart field `file` and a small synthetic file.
+2. Expect `200` JSON containing `id`, original `filename`, and `status`.
+3. Verify metadata is in the database and the stored object is encrypted bytes, not a plaintext copy.
+4. Upload a file larger than 100 MiB in a controlled test environment. Expect application `413`; Nginx has a configured 100 MiB body limit, which may reject the request at the proxy first.
+5. Test missing file field; expect request validation failure.
+
+### Encryption/decryption
+
+- Upload a known file, download it as its owner, and compare downloaded bytes/hash with the original.
+- Verify encrypted storage bytes differ from plaintext for a representative non-empty file.
+- Verify wrapped file-key metadata exists in the `encryption_keys` model/table for new-format records.
+- Test missing `FILE_MASTER_KEY` in a disposable environment: encryption-key operations should fail rather than silently use an insecure key.
+- Test a wrong master key only against disposable data; decryption should fail and the API should not expose cryptographic exception details.
+- Test missing stored object and missing key record; authenticated download currently reports `404` for a missing object and `500` for missing key/decryption errors.
 
----
-
-### 7.2 Share-Link Creation
-
-An authenticated file owner can create a share link for a file.
-
-**Example Request:**
-
-```http
-POST /files/{file_id}/share-link
-Authorization: Bearer <OWNER_JWT>
-Content-Type: application/json
-
-{
-  "expires_at": null,
-  "max_downloads": 1
-}
-```
-
-**Expected Response:**
-
-- Status: HTTP 200 OK
-- Content-Type: application/json
-- Body contains the created share-link details.
-
-```json
-{
-  "id": 26,
-  "file_id": 41,
-  "url": "/files/shared/<secure-token>",
-  "expires_at": null,
-  "max_downloads": 1,
-  "download_count": 0
-}
-```
-
-The generated share-link token must be a long, cryptographically secure, randomly generated value.
-
-The share link can subsequently be accessed without a JWT. The token itself
-acts as the access credential.
-
----
-
-### 7.3 Share-Link Database Verification
-
-After creating a share link, verify that the record has been persisted.
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, file_id, token, expires_at, max_downloads,
-      download_count, created_by, created_at
-      FROM shared_links
-      ORDER BY id DESC;"
-```
-
-**Expected Result:**
-
-For example:
-
-The newly created share link should be stored with the expected file ID, token, expiration settings, download limit, download count, and creator ID.
-
-| id | file_id | token | expires_at | max_downloads | download_count | created_by | created_at |
-|----|---------|-------|------------|---------------|----------------|------------|------------|
-| 4 | 39 | `<random-secure-token>` | `NULL` | 1 | 0 | 34 | `2026-09-02 05:15:42+00` |
-
-Verify:
-
-```text
-file_id         = ID of the file
-token           = securely generated random token
-expires_at      = requested expiration or NULL
-max_downloads   = requested limit or NULL
-download_count  = 0 immediately after creation
-created_by      = authenticated user's ID
-created_at      = creation timestamp  
-```
-
-The token stored in the database must correspond to the token returned by the API.
-
----
-
-### 7.4 Valid Share-Link Download
-
-A valid share link should allow the file to be downloaded without an
-Authorization header.
-
-**Request:**
-
-```http
-GET /files/shared/{token}
-```
-
-No JWT should be supplied.
-
-**Expected Result:**
-
-- HTTP 200 OK
-
-The encrypted file should be successfully read, decrypted, and returned.
-
-A successful share-link download must also create an audit record.
-
----
-
-### 7.5 Share-Link Download Count
-
-Before downloading the file:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, download_count
-      FROM shared_links
-      WHERE id = <SHARE_LINK_ID>;"
-```
-
-**Expected Result:**
-
- - download_count = 0
-
-After one successful share-link download:
-
-- download_count = 1
-
-The count must increase only after the encrypted file has been successfully
-read and decrypted.
-
----
-
-### 7.6 Share-Link Download Audit
-
-After a successful share-link download, verify the audit record.
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, file_id, user_id, share_link_id,
-      access_method, action, ip_address, user_agent, access_time
-      FROM file_access_logs
-      WHERE share_link_id = <SHARE_LINK_ID>
-      ORDER BY id DESC;"
-```
-
-**Expected Result:**
-
-```text
-user_id       = NULL
-share_link_id = actual share-link ID
-access_method = SHARE_LINK
-action        = DOWNLOAD
-```
-
-For example:
-
-| id | file_id | user_id | share_link_id | access_method | action     | ip_address   | access_time                       |
-|----|---------|---------|---------------|---------------|------------|--------------|-----------------------------------|
-| 63 | 25      | NULL    | 7             | SHARE_LINK    | `DOWNLOAD` | `172.20.0.1` | `2026-09-02 23:30:15.123456+00` |
-
-The share-link ID provides traceability to the specific link that was used.
-
-The downloader remains anonymous because no JWT identity is associated with
-the request.
-
----
-
-### 7.7 Maximum Download Limit
-
-Create a share link with:
-
-```json
-{
-  "expires_at": null,
-  "max_downloads": 1
-}
-```
-
-Perform:
-
-Download #1 → HTTP 200 OK
-Download #2 → HTTP 410 Gone
-
-**Expected response** for the second request:
-
-```json
-{
-  "detail": "Share link download limit reached"
-}
-```
-
-Verify:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, download_count, max_downloads
-      FROM shared_links
-      WHERE id = <SHARE_LINK_ID>;"
-```
-
-**Expected:**
-
-| download_count | max_downloads |
-|----------------|---------------|
-| 1              | 1             |
-
-The second request must not create a new **SHARE_LINK** audit record.
-
----
-
-### 7.8 Share-Link Expiration
-
-Create a share link with an expiration time in the past.
-
-For example:
-
-```json
-{
-  "expires_at": "2026-09-01T10:00:00Z",
-  "max_downloads": null
-}
-```
-
-The API should reject creation because the expiration time is not in the
-future.
-
-**Expected Result:**
-
-- HTTP 400 Bad Request
-
-```json
-{
-  "detail": "Expiration time must be in the future"
-}
-```
-
-For an already-created link whose expiration time has subsequently passed,
-attempt:
-
-```http
-GET /files/shared/{token}
-```
-
-**Expected Result:**
-
-- HTTP 410 Gone
-
-```json
-{
-  "detail": "Share link has expired"
-}
-```
-
-The following must remain unchanged:
-
-- download_count
-
-No new SHARE_LINK audit record should be created.
-
----
-
-### 7.9 Invalid Share-Link Token
-
-Request a token that does not exist:
-
-```http
-GET /files/shared/does-not-exist
-```
-
-**Expected Result:**
-
-- HTTP 404 Not Found
-
-```json
-{
-  "detail": "Share link not found"
-}
-```
-
-No share-link audit record should be created.
-
----
-
-### 7.10 Failed Share-Link Download
-
-Temporarily change the storage_path for a share-linked file so that the
-physical encrypted file does not exist.
-
-**Request:**
-
-```http
-GET /files/shared/{token}
-```
-
-**Expected Result**
-
-- HTTP 404 Not Found
-
-```json
-{
-  "detail": "Stored file not found"
-}
-```
-
-Verify:
-
-- download_count = unchanged
-
-and verify that no new **SHARE_LINK** audit record was created.
-
-This confirms that only successful file access is audited.
-
----
-
-### 7.11 Unauthorized Share-Link Creation
-
-A non-owner must not be able to create a share link for another user's file.
-
-Example:
-
-```text
-Authenticated user = 35
-File owner         = 1
-File ID            = 35
-```
-
-**Request:**
-
-```http
-POST /files/35/share-link
-Authorization: Bearer <USER_35_JWT>
-```
-
-**Expected Result:**
-
-- HTTP 403 Forbidden
-
-```json
-{
-  "detail": "Only owner can create share links"
-}
-```
-
-The authorization check compares:
-
-- file.owner_id
-
-against:
-
-- current_user_id
-
-Only the file owner may create a share link.
-
----
-
-### 7.12 Share-Link Access Does Not Require JWT
-
-A valid share link must work without:
-
-```http
-Authorization: Bearer <JWT>
-```
-
-The following is intentionally unauthenticated:
-
-```http
-GET /files/shared/{token}
-```
-
-This differs from:
-
-```http
-GET /files/{file_id}/download
-```
-
-The normal download endpoint requires authenticated authorization, while the
-share-link endpoint uses the secure share token as its access credential.
-
----
-
-### 7.13 File Deletion and Share-Link Cascade
-
-**Create:**
-
-```text
-File
-  |
-  +-- Shared Link
-```
-
-Delete the file through the File Service.
-
-Verify:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT *
-      FROM shared_links
-      WHERE file_id = <FILE_ID>;"
-```
-
-**Expected Result:**
-
-- 0 rows
-
-This verifies:
-
-```text
-files.id
-   |
-   +---- shared_links.file_id
-          ON DELETE CASCADE
-```
-
----
-
-### 7.14 File Sharing Test Summary
-
-The current share-link implementation has been verified for:
-
-- Create valid share link          → **PASS**
-- Valid anonymous link download    → **PASS**
-- Download count increment         → **PASS**
-- Maximum download enforcement     → **PASS**
-- Expired link rejection           → **PASS**
-- Invalid token rejection          → **PASS**
-- Missing storage file → **PASS**
-- Unauthorized link creation → **PASS**
-- Share-link audit record → **PASS**
-- Failed share-link download creates no audit record → **PASS**
-- Expired link creates no audit record → **PASS**
-- Maximum-download rejection creates no audit record → **PASS**
-- File deletion cascade            → **PASS**
-
----
-
-## 9. Audit Log Testing
-
-The File Service records successful file-related operations in the
-`file_access_logs` table. 
-
-Phase 2 introduces explicit access-context tracking for authenticated and
-share-link downloads.
-
-The audit schema distinguishes:
-
-```text
-AUTHENTICATED
-SHARE_LINK
-```
-
-The database also enforces the relationship between the access method and
-the associated identity.
-
-### 9.1 Audit Schema
-
-The file_access_logs table contains:
-
-```text
-file_id
-user_id
-share_link_id
-access_method
-action
-ip_address
-user_agent
-access_time
-```
-
-The access context follows these rules:
-
-```text
-AUTHENTICATED
-    user_id       = required
-    share_link_id = NULL
-
-SHARE_LINK
-    user_id       = NULL
-    share_link_id = required
-```
-
-user_id is therefore nullable because anonymous share-link downloads
-must be represented with:
-
-```text
-user_id = NULL
-```
-
-These rules are enforced at the database level by the 
-ck_file_access_logs_access_context CHECK constraint.
-
-This prevents invalid combinations from being inserted directly into the
-database.
-
----
-
-### 9.2 Verify Authenticated Download Audit
-
-Download a file through:
-
-```http
-GET /files/{file_id}/download
-Authorization: Bearer <JWT>
-```
-
-After the download, query:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, file_id, user_id, share_link_id,
-      access_method, action, ip_address, access_time
-      FROM file_access_logs
-      WHERE file_id = <FILE_ID>
-      ORDER BY id DESC;"
-```
-
-**Expected Result:**
-
-A successful authenticated download should contain:
-
-```text
-user_id       = authenticated user's ID
-share_link_id = NULL
-access_method = AUTHENTICATED
-action        = DOWNLOAD
-```
-
-For example:
-
-| id  | file_id | user_id | share_link_id | access_method | action   | ip_address  | access_time                       |
-|-----:|--------:|--------:|--------------:|---------------|----------|-------------|-----------------------------------|
-| 120  | 41      | 35    | NULL            | AUTHENTICATED    | DOWNLOAD | `172.20.0.1` | `2026-08-29 21:56:59.445285+00` |
-
-The authenticated user's identity is recorded directly in user_id.
-
----
-
-### 9.3 Verify Share-Link Download Audit
-
-Download a file using:
-
-```http
-GET /files/shared/{token}
-```
-
-No JWT is required.
-
-After a successful download, query:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, file_id, user_id, share_link_id,
-      access_method, action, ip_address, user_agent, access_time
-      FROM file_access_logs
-      WHERE share_link_id = <SHARE_LINK_ID>
-      ORDER BY id DESC;"
-```
-
-**Expected Result:**
-
-```text
-user_id       = NULL
-share_link_id = actual share-link ID
-access_method = SHARE_LINK
-action        = DOWNLOAD
-```
-
-For example:
-
-| id | file_id | user_id | share_link_id | access_method | action     | ip_address   | access_time                       |
-|----|---------|---------|---------------|---------------|------------|--------------|-----------------------------------|
-| 63 | 25      | NULL    | 7             | SHARE_LINK    | `DOWNLOAD` | `172.20.0.1` | `2026-09-02 23:30:15.123456+00` |
-
-This identifies the exact share link used without incorrectly assigning the
-share-link creator as the downloader.
-
----
-
-### 9.4 Verify Share Operation Audit
-
-After sharing a file with another user, query:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, file_id, user_id, share_link_id,
-      access_method, action, ip_address, access_time
-      FROM file_access_logs
-      WHERE file_id = <FILE_ID>
-      AND action = 'SHARE'
-      ORDER BY id DESC;"
-```
-
-**Expected Result:**
-
-```text
-action        = SHARE
-file_id       = ID of the shared file
-user_id       = ID of the user who performed the share
-share_link_id = NULL
-access_method = AUTHENTICATED
-```
-
-The SHARE operation is performed by an authenticated user, so it uses the
-authenticated access context.
-
----
-
-### 9.5 Successful Access Is Audited
-
-The system audits successful file access rather than every attempted
-request.
-
-For example:
-
-```text
-Successful authenticated download
-    → audit record created
-
-Successful share-link download
-    → audit record created
-
-Missing storage file
-    → no audit record
-
-Expired share link
-    → no audit record
-
-Maximum downloads reached
-    → no audit record
-
-Invalid share-link token
-    → no audit record
-```
-
-This ensures that the audit log represents actual successful access rather
-than merely attempted requests.
-
----
-
-### 9.6 Share-Link Download Count and Audit Record
-
-A successful share-link download has two independent effects:
-
-```text
-shared_links.download_count
-        +
-file_access_logs audit record
-```
-
-For example, after the first successful download:
-
-- shared_links.download_count = 1
-
-and:
-
-```text
-file_access_logs:
-    access_method = SHARE_LINK
-    share_link_id = <ID>
-    user_id       = NULL
-    action        = DOWNLOAD
-```
-
-Both should be verified after a successful request.
-
-A rejected request must not modify the download count or create a successful
-access audit record.
-
----
-
-### 9.7 Verify Audit Context Invariants
-
-**Run:**
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT access_method,
-      COUNT(*) AS count,
-      COUNT(*) FILTER (WHERE user_id IS NULL) AS user_id_null,
-      COUNT(*) FILTER (WHERE share_link_id IS NULL) AS share_link_id_null
-      FROM file_access_logs
-      GROUP BY access_method
-      ORDER BY access_method;"
-```
-
-**Expected structure:**
-
-access_method | user_id_null | share_link_id_null
---------------:|-------------:|------------------
-AUTHENTICATED |      0       |         all
-SHARE_LINK    |     all      |          0
-
-For the current data, for example:
-
-access_method | count | user_id_null | share_link_id_null
---------------:|------:|-------------:|-------------------
-AUTHENTICATED |   9   |      0       |         9
-SHARE_LINK    |   5   |      5       |         0
-
-The exact counts will vary depending on the tests performed.
-
----
-
-### 9.8 Database-Level Audit Constraint
-
-The database enforces the following access-context rules:
-
-```text
-AUTHENTICATED
-    user_id IS NOT NULL
-    share_link_id IS NULL
-
-SHARE_LINK
-    user_id IS NULL
-    share_link_id IS NOT NULL
-```
-
-The constraint is:
-
-- ck_file_access_logs_access_context
-
-It protects the audit invariant even when records are inserted or modified
-outside the application's **create_audit_log()** service.
-
-The Phase 2 migration is therefore a required part of the audit schema.
-
----
-
-### 9.9 Audit Log IP Address
-
-The audit log records the IP address observed by the application.
-
-The authenticated download endpoint receives the request information through
-FastAPI's **Request** object.
-
-The current Docker deployment may show the reverse-proxy/container address,
-such as:
-
-```text
-172.20.0.1
-```
-
-rather than the original client address, depending on the proxy and
-application configuration.
-
-Verify:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, action, access_method, ip_address, access_time
-      FROM file_access_logs
-      ORDER BY id DESC
-      LIMIT 20;"
-```
-
----
-
-### 9.10 Audit Log Timestamp
-
-access_time is generated by PostgreSQL.
-
-The current database uses **UTC**, so timestamps may appear with:
-
-```text
-+00
-```
-
-The value represents UTC.
-
-For **IST**
-
-```text
-IST = UTC + 05:30
-```
-
----
-
-### 9.11 Audit Test Summary
-
-The Phase 2 audit implementation has been verified for:
-
-- Authenticated download audit → **PASS**
-- Share-link download audit → **PASS**
-- Authenticated download stores **user_id** → **PASS**
-- Authenticated download stores **share_link_id** = NULL → **PASS**
-- Share-link download stores **user_id = NULL** → **PASS**
-- Share-link download stores actual **share_link_id** → **PASS**
-- Share-link download stores **access_method = SHARE_LINK** → **PASS**
-- Authenticated download stores **access_method = AUTHENTICATED** → **PASS**
-- SHARE operation audit → **PASS**
-- Failed storage access creates no audit record → **PASS**
-- Expired link creates no audit record → **PASS**
-- Maximum-download rejection creates no audit record → **PASS**
-- Database access-context constraint → **PASS**
-- Share-link download count increments only on successful access → **PASS**
-
----
-
-## 16. Session-Aware Chat Testing
-
-### 16.1 Verify New Session ID on Login
-
-Login with valid credentials through `POST /login`.
-
-Expected response:
-
-```json
-{
-  "access_token": "<JWT>",
-  "session_id": "<UUID>"
-}
-```
-
-Verify that the returned `session_id` is non-empty and that the same session identifier is represented in the JWT `session_id` claim.
-
-### 16.2 Verify Session ID Is Not Client-Supplied
-
-Send `POST /chat/history` with only:
-
-```json
-{
-  "message": "session test",
-  "response": "ok"
-}
-```
-
-The request should succeed with a valid JWT. The persisted `chat_history.session_id` must equal the session ID extracted from that JWT.
-
-A client-provided `session_id` or `sender` is no longer part of the `ChatCreate` request contract.
-
-### 16.3 Verify Conversation Reuse
-
-Using one login/session, submit two or more chat turns. Query:
-
-```bash
-docker compose exec -T postgres psql \
-  -U chatbot \
-  -d chatbot \
-  -c "SELECT id, session_id, user_id, timestamp
-      FROM chat_history
-      WHERE user_id = <USER_ID>
-      ORDER BY id DESC;"
-```
-
-Expected: one `chat_history` row for that user/session, with multiple related `chat_messages` rows.
-
-### 16.4 Verify New Login Creates a New Session
-
-Log out and authenticate again. Confirm that the new login receives a different `session_id`. Messages saved after the new login should be associated with the new session rather than the previous conversation.
-
-### 16.5 Verify Cross-User Isolation
-
-Attempt to request another user's session history while authenticated as a different user.
-
-Expected:
-
-- no cross-user chat records are returned;
-- the database query remains scoped by both session ID and authenticated user ID.
-
----
-
-## 17. Administrative Chat History Testing
-
-### 17.1 Admin Chat Summary
-
-Authenticate as an administrator and request:
-
-```http
-GET /admin/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Expected response items contain:
-
-```text
-id
-user_id
-user
-date
-session_id
-messages
-status
-```
-
-Verify that the list is ordered by conversation timestamp descending and that `messages` matches the number of `chat_messages` rows belonging to each chat.
-
-### 17.2 Admin Chat Message Retrieval
-
-Select a valid chat and request:
-
-```http
-GET /admin/users/<USER_ID>/chats/<CHAT_ID>/messages
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Expected:
-
-- HTTP 200 OK;
-- messages belong to the requested chat;
-- messages are ordered by message ID ascending;
-- each message exposes `id`, `chat_id`, `role`, `content`, and `created_at`.
-
-### 17.3 Admin Chat Ownership Check
-
-Use a valid `CHAT_ID` with a different `USER_ID`.
-
-Expected:
-
-```text
-404 Not Found
-Chat not found
-```
-
-This verifies that the message endpoint does not return a chat merely because the chat ID exists. The chat must also belong to the requested user.
-
-### 17.4 Get User Chats
-
-The get_user_chats() operation retrieves the chat-history records belonging to a specific user.
-
-The API endpoint is:
-
-```http
-GET /admin/users/{user_id}/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-When accessed through the Nginx /auth/ prefix:
-
-```http
-GET /auth/admin/users/{user_id}/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-#### Purpose
-
-This endpoint is different from:
-
-```http
-GET /admin/chats
-```
-
-`GET /admin/chats` retrieves the administrative chat-history summary/list, whereas:
-
-```http
-GET /admin/users/{user_id}/chats
-```
-
-specifically retrieves the chats associated with the supplied `user_id`.
-
-#### Administrator Test
-
-Authenticate as an administrator and identify an existing user:
-
-```http
-GET /admin/users
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Select a valid user ID, for example:
-
-USER_ID = <USER_ID>
-
-Then request:
-
-```http
-GET /admin/users/<USER_ID>/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-#### Expected Result
-
-The request should return:
-
-```text
-200 OK
-```
-
-The returned chat-history records must belong to the requested user.
-
-For each returned chat, verify that:
-
-```text
-chat_history.user_id == <USER_ID>
-```
-
-The response must not contain chat histories belonging to another user.
-
-#### User With No Chats
-
-Repeat the test using a valid user who has no chat-history records.
-
-Expected behavior:
-
-```text
-200 OK
-[]
-```
-
-or the application's documented empty collection representation.
-
-The endpoint should not return another user's chat history simply because the requested user has no chats.
-
-#### User Isolation Verification
-
-Create or identify two users:
-
-```text
-User A
-User B
-```
-
-Create chat history for both users.
-
-Then call:
-
-```http
-GET /admin/users/<USER_A_ID>/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that only User A's chat histories are returned.
-
-Repeat:
-
-```http
-GET /admin/users/<USER_B_ID>/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that only User B's chat histories are returned.
-
-#### Invalid User ID
-
-Call the endpoint with a user ID that does not exist:
-
-```http
-GET /admin/users/<NON_EXISTENT_USER_ID>/chats
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that the API returns the application's documented not-found response, normally:
-
-```text
-404 Not Found
-```
-
-#### Non-Admin Authorization
-
-Repeat the request using a valid ordinary-user JWT:
-
-```http
-GET /admin/users/<USER_ID>/chats
-Authorization: Bearer <ORDINARY_USER_JWT>
-```
-
-Expected:
-
-```text
-403 Forbidden
-```
-
-This confirms that `get_user_chats()` is protected by the administrator authorization requirement and cannot be invoked by an ordinary authenticated user.
-
-#### Relationship Verification
-
-The endpoint should follow the database relationship:
-
-```text
-users.id
-   │
-   ▼
-chat_history.user_id
-   │
-   ▼
-chat_history
-```
-
-The test therefore verifies both:
-
-The requested user_id is used to filter chat histories.
-The endpoint does not accidentally return all chat histories.
-This test should be kept separate from the `/admin/chats` test so that user-specific filtering is explicitly covered.
-
-### 17.5 Non-Admin Access
-
-Call `/admin/chats` and `/admin/users/{user_id}/chats/{chat_id}/messages` using a valid ordinary-user JWT.
-
-For example:
-
-```http
-GET /admin/chats
-Authorization: Bearer <ORDINARY_USER_JWT>
-```
-
-and:
-
-```http
-GET /admin/users/{user_id}/chats/{chat_id}/messages
-Authorization: Bearer <ORDINARY_USER_JWT>
-```
-
-Both requests should be rejected with:
-
-```text
-403 Forbidden
-```
-
-This confirms that administrative chat-history endpoints cannot be accessed by ordinary authenticated users because the endpoints require `require_admin`.
-
-### 17.6 Admin UI Chat View
-
-In the Admin UI:
-
-1. Navigate to **Chat History**.
-2. Confirm the summary table loads.
-3. Select **View** for a conversation.
-4. Confirm the Chat Details modal opens.
-5. Verify Chat ID, Session ID, and Date.
-6. Verify user and chatbot messages are displayed in order.
-7. Close the modal using the close control and by clicking the modal backdrop.
-
-### 17.7 Chat History Cache and Refresh
-
-Navigate to Chat History twice without forcing refresh. The second load should use the in-memory cache when available.
-
-After creating or changing relevant data, trigger the Admin refresh flow and verify that a new request is made and the displayed list is updated.
-
----
-
-## 18. Administrative Users UI Testing
-
-### 18.1 User Sorting
-
-Load the Users section and verify that users are displayed in ascending numeric ID order.
-
-### 18.2 User Search
-
-Search using values from the user ID, username, email, and role fields. Verify that matching users remain visible and that the page resets to page 1 after search changes.
-
-### 18.3 User Pagination
-
-With more than ten users, verify:
-
-- ten users are displayed per page;
-- previous/next controls are disabled at the corresponding boundaries;
-- the active page is highlighted;
-- the footer reports the displayed range and total count.
-
-### 18.4 User Refresh
-
-Use the Refresh button in the Users section. Verify that the cache is bypassed and fresh data is rendered.
-
-### 18.5 Safe HTML Rendering
-
-Use test values containing HTML metacharacters in user/chat/log fields and verify that they are rendered as text rather than interpreted as HTML. This validates the frontend `escapeHtml()` utility used by the updated renderers.
-
----
-
-## 19. Admin Frontend Navigation and Session Cleanup Testing
-
-### 19.1 Hash Navigation
-
-Open an Admin URL containing a section hash such as `#users` or `#chat-history`. Verify that the corresponding panel is selected during initialization.
-
-Change sections and verify that the URL hash, active navigation item, and visible content panel remain synchronized.
-
-### 19.2 Logout Cleanup
-
-Initiate logout and cancel the confirmation. Verify that the user remains in the Admin UI. Confirm logout and verify that:
-
-- `authToken` is removed;
-- `username` is removed;
-- `role` is removed;
-- the browser is redirected to `/login.html`.
-
----
-
-## 20. Administrative Dashboard Testing
-
-### 20.1 Dashboard Authorization
-
-Call:
-
-```http
-GET /admin/dashboard
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that an administrator receives a successful response. Repeat with a
-valid ordinary-user JWT and verify that the request is rejected with:
-
-```text
-403 Forbidden
-```
-
-### 20.2 Dashboard Summary Metrics
-
-Verify that the response contains:
-
-- `stats.users`;
-- `stats.conversations`;
-- `stats.messages`;
-- `stats.active_users`.
-
-Confirm that `active_users` represents distinct users having at least one
-conversation, rather than a rolling activity window.
-
-### 20.3 Recent Dashboard Data
-
-Verify that:
-
-- `recent_users` contains no more than five records and is ordered by
-  descending user ID;
-- `recent_conversations` contains no more than five records and is ordered by
-  descending conversation timestamp;
-- recent conversation records contain the user and session identifiers exposed
-  by the dashboard endpoint.
-
-### 20.4 Dashboard Seven-Day Activity
-
-Verify that the `activity` response contains seven labels and matching
-`conversations` and `messages` arrays. Confirm that zero-activity days are
-represented with zero values.
-
-### 20.5 Dashboard UI
-
-In the Admin UI:
-
-1. Open **Dashboard**.
-2. Verify that the four summary cards are populated.
-3. Verify that both activity charts render.
-4. Verify that recent users and recent conversations render.
-5. Trigger or simulate a failed dashboard request and verify that the error
-   state is shown without leaving the cards in the loading state.
-
----
-
-## 21. Administrative Analytics Testing
-
-### 21.1 Analytics Authorization
-
-Call each `/admin/analytics/*` endpoint with a valid administrator JWT and
-verify that the request succeeds.
-
-Repeat with a valid ordinary-user JWT and verify that the request is rejected
-with:
-
-```text
-403 Forbidden
-```
-
-### 21.2 Analytics Default Date Range
-
-Call:
-
-```http
-GET /admin/analytics/overview
-Authorization: Bearer <ADMIN_JWT>
-```
-
-without date parameters.
-
-Verify that:
-
-- `end_date` is the current date in `Asia/Kolkata`;
-- `start_date` is 29 days before `end_date`;
-- the response contains the documented aggregate fields.
-
-### 21.3 Analytics Custom Date Range
-
-Call an analytics endpoint with:
-
-```http
-GET /admin/analytics/overview?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that the returned `start_date` and `end_date` match the request and that
-the metrics are restricted to the selected range.
-
-### 21.4 Daily Activity Completeness
-
-Test:
-
-```http
-GET /admin/analytics/chat-activity
-Authorization: Bearer <ADMIN_JWT>
-```
-
-and:
-
-```http
-GET /admin/analytics/message-activity
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that every date in the selected range is represented, including dates
-with zero activity, and that each record contains `chats`, `users`, and
-`messages` rather than `sessions`.
-
-### 21.5 Top Users
-
-Call:
-
-```http
-GET /admin/analytics/top-users?limit=10
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that returned users are ordered by chat count descending and that the
-response contains `user_id`, `username`, `chats`, and `messages`.
-
-Also verify the documented `limit` boundaries:
-
-- `limit=1` is accepted.
-- `limit=100` is accepted.
-- `limit=0` is rejected.
-- `limit=101` is rejected.
-
-### 21.6 Chat Statistics
-
-Call:
-
-```http
-GET /admin/analytics/chat-statistics
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that the response contains total chats, total messages, total
-sessions, average chats per session, and average messages per chat.
-
-### 21.7 Hourly Activity
-
-Call:
-
-```http
-GET /admin/analytics/hourly-activity
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that exactly 24 hourly entries are returned with `hour` values from
-`0` through `23`, including zero counts for hours without activity.
-
-### 21.8 Analytics UI
-
-In the Admin UI:
-
-1. Open **Analytics**.
-2. Verify that selecting Analytics triggers the analytics load request and the
-   analytics data loads.
-3. Change the date preset or date inputs and apply the filter.
-4. Verify that the displayed data updates for the selected range.
-5. Use Refresh and verify that the data is reloaded.
-6. Use Export and verify that a CSV file is generated.
-7. Verify that analytics loading/error states do not prevent the rest of the
-   Admin navigation from functioning.
-
----
-
-## 22. Administrative Settings and System Logs Testing
-
-### 22.1 Settings Authorization and Defaults
-
-Call:
-
-```http
-GET /admin/settings
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that an administrator receives the four documented settings. Confirm that
-missing database rows are supplied from the backend defaults. Repeat with a valid ordinary-user JWT and verify that access is rejected with `403 Forbidden`.
-
-### 22.2 Settings Validation
-
-Call:
-
-```http
-PUT /admin/settings
-Authorization: Bearer <ADMIN_JWT>
-Content-Type: application/json
-```
-
-Verify that valid values are persisted and that unknown fields or values outside
-the documented ranges are rejected by validation. Confirm that the successful
-response lists the updated setting keys.
-
-### 22.3 Settings UI
-
-In the Admin UI:
-
-1. Open **Settings** and verify values load.
-2. Change values and save them.
-3. Verify the success status and updated keys.
-4. Use Refresh and verify persisted values are restored.
-5. Use Reset and verify the form returns to defaults without an implicit save.
-
-### 22.4 Administrative Audit Log Creation
-
-Perform administrator actions that are documented as audited, including user
-creation, role changes, user deletion, and system-setting updates. Verify that
-corresponding `audit_logs` records contain the administrator identity, action,
-level, optional details, and timestamp.
-
-### 22.5 Log Filtering, Search, and Pagination
-
-Call:
-
-```http
-GET /admin/logs?page=1&page_size=50&level=info&search=<term>
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify level filtering, case-insensitive matching against action/details/username, newest-first ordering, and correct `page`, `page_size`, `total`, and `total_pages` metadata. Verify that `page_size` values outside 1–200 are rejected.
-
-### 22.6 Log Export
-
-Call:
-
-```http
-GET /admin/logs/export?level=info&search=<term>
-Authorization: Bearer <ADMIN_JWT>
-```
-
-Verify that the response is CSV, uses the filename `system_logs.csv`, respects the selected filters, and contains Timestamp, User, Level, Action, and Details columns.
-
-### 22.7 Manual Log Creation
-
-Call:
-
-```http
-POST /admin/logs
-Authorization: Bearer <ADMIN_JWT>
-Content-Type: application/json
-```
-
-Verify that `info`, `warning`, and `error` levels are accepted and that missing
-`action` or unsupported levels return `400 Bad Request`.
-
-### 22.8 Admin Logs UI
-
-Open **Logs** and verify that the table displays timestamp, user, level, action,
-and details. Verify Refresh, level filtering, search, pagination, and Download.
-
----
-
-## 23. Public Registration and Chat Runtime Settings Testing
-
-### 23.1 Public Settings Endpoint
-
-Call:
-
-```http
-GET /admin/settings/public
-```
-
-Verify that the response is available without an administrator JWT and contains only `application_name`, `max_message_length`, `maintenance_mode`, and `allow_user_registration`. Remove one or more persisted settings and verify that backend defaults are returned.
-
-### 23.2 Registration Availability and Creation
-
-Set `allow_user_registration` to `true` and call:
-
-```http
-POST /register
-Content-Type: application/json
-```
-
-Verify that a new account is created with role `user` and that the password is stored through the existing password-hashing path rather than as plaintext. Repeat with an existing username and verify `409 Conflict`. Set the setting to `false` and verify `403 Forbidden`.
-
-### 23.3 Registration UI
-
-1. Open the login page with registration enabled and verify that **Create an account** is shown.
-2. Disable registration and verify that the link is hidden.
-3. Make the public-settings request fail and verify that the link remains hidden.
-4. Open the registration page and verify that the Register button is disabled when registration is unavailable.
-5. Enter different passwords and verify the client-side mismatch message without submitting.
-6. Register a valid user and verify the success message and form reset.
-
-### 23.4 Chat Application Settings
-
-Set a non-default `application_name` and `max_message_length`, then open the chatbot. Verify that the configured name is applied to the document title and chat header, the input `maxLength` matches the setting, and the character counter updates while typing.
-
-### 23.5 Chat Maintenance Mode
-
-Enable `maintenance_mode` and verify that the chat input and send button are disabled and a maintenance notice is shown. Also call the chat persistence endpoint as a normal user and verify `503 Service Unavailable`. Repeat with an administrator JWT and verify that the administrator is not blocked by this maintenance check.
-
-### 23.6 Maximum Message Length
-
-Configure a small test maximum and verify that the browser counter reflects the value. Attempt a message longer than the limit and verify the client-side rejection. Then call the persistence endpoint directly with an over-limit message and verify `400 Bad Request`. Confirm that a message at or below the configured limit is accepted when maintenance mode is disabled.
-
-### 23.7 Chat Message Rendering
-
-Submit a message containing HTML-like text such as `<b>test</b>` and verify that it is displayed as text rather than interpreted as HTML. Verify that chatbot typing output is also rendered as text and that timestamps remain present.
-
----
-
-## 24. Updated Verification Summary
-
-The recent Git changes introduce the following verification targets in addition to the existing authentication, chat-isolation, file, sharing, audit, encryption, routing, database, and Docker tests:
-
-| Area | Verification target |
-|------|---------------------|
-| Login | New UUID session returned and embedded in JWT |
-| Chat persistence | Session derived from JWT |
-| Chat persistence | Existing conversation reused for same user/session |
-| Admin chat list | Conversation summaries and message counts |
-| Admin chat view | User/chat ownership check and ordered messages |
-| Admin authorization | Ordinary users rejected from admin chat APIs |
-| Admin UI | Chat-history modal and message rendering |
-| Admin UI | Chat-history caching and refresh |
-| Users UI | Sorting, search, pagination, refresh |
-| Frontend security | HTML escaping for rendered data |
-| Navigation | Hash-based section restoration and navigation |
-| Navigation guard | Invalid Admin sections rejected by admin state |
-| Dashboard API | Summary, recent records, and seven-day activity response |
-| Dashboard UI | Summary cards, charts, recent users, and recent conversations |
-| Dashboard errors | Loading/error states handled without stale loading values |
-| Analytics API | Daily chat activity returns chats, users, and messages |
-| Public settings | Allowlisted settings and backend defaults returned without admin authorization |
-| Registration API | Registration gate, duplicate username handling, password hashing, and user role |
-| Registration UI | Public-setting visibility, availability failure handling, and password confirmation |
-| Chat settings | Application name, maximum message length, maintenance mode, and live counter |
-| Chat enforcement | Server-side maintenance and message-length validation |
-| Chat rendering | User and chatbot message text rendered without HTML interpretation |
-| Analytics loading | Analytics load triggered when Analytics section is selected |
-| Settings API/UI | Settings load, validation, reset, and save behavior |
-| System logs | Audit creation, filtering, search, pagination, and CSV export |
-| API client | Structured HTTP errors and 204 response handling |
-| Logout | Authentication/session-related localStorage cleanup |
+Never run key-migration scripts against live data without reading their source, taking a backup of both DB and encrypted files, and rehearsing the migration on a copy.
+
+## 8. File permissions, sharing, and share links
+
+### Owner and recipient permissions
+
+1. Upload a file as User A.
+2. Download as A: expect success.
+3. Attempt download as User B before sharing: expect `403 Access denied`.
+4. A calls `POST /files/{file_id}/share` with `{"user_id":<B_ID>,"permission":"READ"}`.
+5. Download as B: expect success and decrypted content.
+6. Attempt to share A's file as B: expect `403 Only owner can share`.
+7. Attempt access to a nonexistent file: expect `404`.
+8. Verify the share operation creates the expected permission record and relevant audit event as implemented.
+
+### Share links
+
+1. Owner creates a link using `POST /files/{file_id}/share-link` with `{"expires_at":null,"max_downloads":1}`.
+2. Expect response with link ID, file ID, relative URL, expiry, max download count, and initial `download_count=0`.
+3. Open `GET /files/shared/{token}` without a JWT; the token is the credential.
+4. For a valid link, expect a file download, download count increment, and audit event with `access_method=SHARE_LINK`.
+5. Use an unknown token: expect `404`.
+6. Use an expired link: expect `410`.
+7. Use a link whose download limit has been reached: expect `410`.
+8. Attempt link creation as a non-owner: expect `403`.
+9. Attempt to create a link with expiration in the past: expect `400`.
+
+**Implementation caveat:** The current `GET /files/shared/{token}` source has an expiration-check branch that should be verified when `expires_at` is `null`; include a regression test and fix the branch before relying on non-expiring links in production.
+
+## 9. File audit logging
+
+- Authenticated successful download should create a `DOWNLOAD` audit record with `access_method=AUTHENTICATED` and request metadata.
+- Successful share-link download should create a `DOWNLOAD` audit record with `access_method=SHARE_LINK`, share-link ID, and no authenticated user ID.
+- Verify denied or failed operations do not create a misleading successful-download event.
+- Check action, file ID, user ID, share-link ID, access method, timestamp, IP and user-agent fields as defined by the model/schema. A Docker gateway IP may be observed instead of the original browser IP; see `docs/troubleshooting.md`.
+
+## 10. Dashboard and analytics
+
+### Dashboard (`GET /auth/admin/dashboard`)
+
+- Admin can load the dashboard; normal user receives `403`.
+- Compare total users/conversations/messages to controlled database counts.
+- Confirm `active_users` means distinct users with at least one conversation, not a recent-activity window.
+- Confirm recent users are limited to five and ordered by descending user ID.
+- Confirm recent conversations are limited to five and newest first.
+- Verify the activity payload has seven calendar-day labels and corresponding conversation/message arrays; backend timezone is `Asia/Kolkata`.
+
+### Analytics (`/auth/admin/analytics/*`)
+
+Test `/overview`, `/chat-activity`, `/message-activity`, `/top-users`, `/chat-statistics`, and `/hourly-activity` as admin and as a non-admin.
+
+- Omitted dates default to the last 30 inclusive calendar days ending today in `Asia/Kolkata`.
+- A custom `start_date`/`end_date` returns metrics for the requested inclusive range.
+- Empty days in daily activity arrays are represented with zero values.
+- Invalid date strings should be rejected by request validation.
+- `top-users` `limit` defaults to 10; values outside 1–100 should fail validation.
+- Compare message totals with `chat_messages` joined to conversations according to the backend query. Do not assume the selected period filters individual message creation timestamps: the current queries scope messages through their parent conversation timestamp.
+
+## 11. Settings and registration policy
+
+- `GET /auth/admin/settings/public` works without a JWT and returns only `application_name`, `max_message_length`, `maintenance_mode`, and `allow_user_registration`.
+- Confirm no unrelated/internal settings are leaked by the public endpoint.
+- `GET /auth/admin/settings` and `PUT /auth/admin/settings` require admin; a non-admin receives `403`.
+- Update each field with valid data and confirm serialized response types (boolean flags, integer message limit, string application name).
+- Test `application_name` boundaries 1 and 100 characters; `max_message_length` boundaries 1 and 100000; reject out-of-range/unknown fields per schema.
+- Verify each settings update produces an audit event.
+- Verify `allow_user_registration=false` blocks new registration and `maintenance_mode=true` blocks non-admin chat-history writes.
+
+## 12. Audit-log UI and CSV export
+
+- Admin can list logs at `GET /auth/admin/logs`; non-admin cannot.
+- Test `page` minimum 1 and `page_size` range 1–200.
+- Filter by `level` and case-insensitive `search`; confirm results are newest first and totals/pagination reflect the filtered query.
+- `GET /auth/admin/logs/export` returns a CSV download named `system_logs.csv` with columns `Timestamp`, `User`, `Level`, `Action`, `Details` and applies the same level/search filters.
+- `POST /auth/admin/logs` accepts levels `info`, `warning`, `error`; invalid levels or missing action return `400`.
+- Verify sensitive data (passwords, JWTs, master keys) is not included in audit details.
+
+## 13. Frontend testing
+
+Test the user flows in the browser and inspect the Network and Console panels:
+
+- login success/failure and token storage under `localStorage.authToken`;
+- registration enabled/disabled behavior and duplicate usernames;
+- chat message submission, response display, length validation, and maintenance state;
+- history refresh and session isolation;
+- admin navigation and API failures for non-admin users;
+- dashboard cards/charts against API payloads;
+- analytics date filters, loading/error/empty states;
+- user management, settings save, log search/pagination/CSV export;
+- upload progress/error handling, list/download/delete, direct sharing and share-link flow.
+
+Frontend role checks are not security controls. Confirm the backend rejects forbidden requests even if a user manually changes browser storage or calls an endpoint directly.
+
+## 14. Rasa and custom-action testing
+
+The repository's explicit Rasa story regression file is `rasa/tests/test_stories.yml`. It should be run with the Rasa test workflow supported by the version pinned in `rasa/Dockerfile`/requirements. Inspect the installed Rasa version and its CLI help before choosing a command; no exact test command is asserted here because the archive does not provide a project-level test script.
+
+- Ensure stories use current intents, entities, responses, and action names in `domain.yml` and `data/`.
+- Train/validate NLU changes with the configured Rasa tooling and representative examples.
+- Test action-server reachability from Rasa using the service name and port in `rasa/endpoints.yml`.
+- Test custom actions in `rasa_sdk/actions/` for expected slot/event/response behavior and database failure handling.
+- Confirm auth/session-related actions do not trust arbitrary client-supplied user IDs or session IDs.
+- Review Rasa logs and SDK logs separately when an intent is parsed but the custom action fails.
+
+## 15. PostgreSQL and migrations
+
+- Verify initialization on a brand-new disposable volume: `postgres/init.sql` and `postgres/seed.sql` are initialization scripts and generally run only when the data directory is empty.
+- Verify restart persistence by stopping/restarting containers without deleting volumes.
+- Check the current File Service Alembic revision using the documented container command `docker compose exec file_service alembic current`.
+- Apply pending File Service migrations in a test environment with `docker compose exec file_service alembic upgrade head`.
+- Test migrations on an empty database and a copy of representative existing data. Verify constraints, foreign keys, encryption-key rows, share links, file-access audits, and chat/message records after migration.
+- Auth Service currently calls SQLAlchemy `create_all()` at startup; do not assume it applies alterations to existing tables as a versioned migration would.
+
+## 16. Docker and deployment smoke tests
+
+1. `docker compose config` parses successfully.
+2. `docker compose ps` shows expected services running.
+3. Review `docker compose logs --tail=200 <service>` for startup/import/configuration failures.
+4. Browser `http://localhost:8081/` loads login page; static files resolve.
+5. Nginx forwards `/auth/`, `/rasa/`, `/files/` to the correct service.
+6. Login/register work and JWT-protected APIs reject missing/invalid tokens.
+7. File Service health route `/health` and database health route `/health/db` respond if accessed directly; note they may not be exposed through Nginx.
+8. Upload/download round trip preserves bytes and stored file is encrypted.
+9. Chat history survives container restart using persistent DB storage.
+10. Rasa responds and custom actions reach the SDK.
+11. Admin settings/logs/dashboard/analytics reject non-admin requests.
+12. A database and file-storage backup can be restored in a separate environment.
+
+## 17. Regression checklist before merging
+
+- [ ] Valid/invalid/expired JWT behavior unchanged.
+- [ ] `require_admin` guards all admin-only routes.
+- [ ] Cross-user chat history and file access remain isolated.
+- [ ] Registration toggle, maintenance mode, and message-length limit work.
+- [ ] Dashboard/analytics counts and date ranges remain correct.
+- [ ] File encryption/decryption and `FILE_MASTER_KEY` handling work.
+- [ ] Direct `READ` permission and share-link expiry/download limits work.
+- [ ] File and admin audit events are correct and contain no secrets.
+- [ ] Alembic migration upgrades a representative database safely.
+- [ ] Nginx routes and frontend module flows remain functional.
+- [ ] Documentation is updated for any API/config/schema behavior changes.
