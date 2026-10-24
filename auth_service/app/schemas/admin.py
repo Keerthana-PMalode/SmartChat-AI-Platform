@@ -12,10 +12,8 @@ class CreateUserRequest(BaseModel):
     password: str
     role: str = "user"
 
-
 class UpdateRoleRequest(BaseModel):
-    role: str
-
+    role: Literal["user", "admin"]
 
 class UserResponse(BaseModel):
     id: int

@@ -9,23 +9,26 @@ function decodeJWT(token) {
   }
 }
 
+
 function handleLoginSuccess(data, username) {
   localStorage.setItem("authToken", data.access_token);
   localStorage.setItem("username", username);
 
   const payload = decodeJWT(data.access_token);
 
-  if (!payload) {
-    throw new Error("Invalid token");
+  if (!payload || !payload.role) {
+    localStorage.clear();
+    throw new Error("Invalid token or missing role");
   }
 
-  localStorage.setItem("role", payload.role);
+  const serverRole = String(payload.role).toLowerCase();
+
+  localStorage.setItem("role", serverRole);
 
   console.log("JWT Payload:", payload);
+  console.log("Authenticated role:", serverRole);
 
-  if (payload.role === "admin") {
-    window.location.href = "admin.html";
-  } else {
-    window.location.href = "chat.html";
-  }
+  // Return the role; do not redirect here.
+  return serverRole;
 }
+

@@ -231,6 +231,18 @@ def update_role(
 
     old_role = user.role
 
+    if user.role == "admin" and request.role != "admin":
+        admin_count = (
+            db.query(User)
+            .filter(User.role == "admin")
+            .count()
+        )
+
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot remove the last administrator",
+            )   
     user.role = request.role
 
     create_audit_log(

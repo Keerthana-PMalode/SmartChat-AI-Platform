@@ -8,9 +8,18 @@ from passlib.context import CryptContext
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-SECRET_KEY = os.getenv("SECRET_KEY", "secret")
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 
+if not SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY environment variable must be configured"
+    )
+
+if len(SECRET_KEY) < 32:
+    raise RuntimeError(
+        "SECRET_KEY must contain at least 32 characters"
+    )
 
 def verify_token(token: str):
     try:

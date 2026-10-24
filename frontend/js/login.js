@@ -111,27 +111,22 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const data = await response.json();
 
-      /* =========================
-         STORE USER ROLE
-      ========================= */
+      /* Store authentication and get role from JWT */
+      
+      const serverRole = handleLoginSuccess(data, username);
 
-      localStorage.setItem("role", selectedRole);
+      /* Redirect based on the JWT role */
 
-      /* =========================
-         SUCCESS HANDLER
-      ========================= */
-
-      handleLoginSuccess(data, username);
-
-      /* =========================
-         ROLE-BASED REDIRECT
-      ========================= */
-
-      if (selectedRole === "admin") {
+      if (serverRole === "admin") {
+        console.log("Redirecting to admin.html");
         window.location.href = "admin.html";
-      } else {
+      } else if (serverRole === "user") {
+        console.log("Redirecting to chat.html");
         window.location.href = "chat.html";
-      }
+      } else {
+        localStorage.clear();
+ 	throw new Error("Unexpected user role");		
+      }  
     } catch (err) {
       console.error("Login error:", err);
 
