@@ -1,3 +1,4 @@
+
 services:
 
   postgres:
@@ -24,11 +25,11 @@ services:
       context: ./auth_service
       dockerfile: Dockerfile
 
+    expose:
+      - "8000"
+
     env_file:
       - ./.env
-
-    volumes:
-      - ./auth_service:/app
 
     depends_on:
       - postgres
@@ -36,7 +37,7 @@ services:
     restart: unless-stopped
 
     environment:
-      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set} 
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
 
     networks:
       - chatbot_network
@@ -47,6 +48,9 @@ services:
       context: ./file_service
       dockerfile: Dockerfile
 
+    expose:
+      - "8001"
+
     env_file:
       - ./.env
 
@@ -54,7 +58,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
 
     volumes:
-      - ./file_service/uploads:/app/uploads
+      - chatbot-project_file_uploads:/app/uploads
 
     depends_on:
       - postgres
@@ -63,6 +67,7 @@ services:
 
     networks:
       - chatbot_network
+
 
   rasa_sdk:
     build:
@@ -78,9 +83,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_PORT: ${POSTGRES_PORT}
-
-    volumes:
-      - ./rasa_sdk/actions:/app/actions
 
     command: start --actions actions
 
@@ -102,7 +104,6 @@ services:
       - ./.env
 
     volumes:
-      - ./rasa:/app
       - chatbot-project_rasa_models:/app/models
 
     command: >
@@ -137,12 +138,12 @@ services:
       - rasa
       - auth
       - file_service
-      
 
     restart: unless-stopped
 
     networks:
       - chatbot_network
+
 
 volumes:
   chatbot-project_postgres_data:
@@ -150,6 +151,10 @@ volumes:
 
   chatbot-project_rasa_models:
     external: true
+
+  chatbot-project_file_uploads:
+    name: chatbot-project_file_uploads
+
 
 networks:
   chatbot_network:

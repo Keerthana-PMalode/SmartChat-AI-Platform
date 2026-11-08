@@ -50,16 +50,34 @@ def admin_dashboard(
         .count()
     )
 
+
     # -------------------------------------------------------
     # RECENT USERS
     # -------------------------------------------------------
+    #
+    # Retrieve the five users with the most recent
+    # conversation activity.
+    #
+    # Users without conversations are excluded.
+    # -------------------------------------------------------
 
     recent_users = (
-        db.query(User)
-        .order_by(User.id.desc())
+        db.query(
+            User,
+            func.max(ChatHistory.timestamp).label("last_activity"),
+        )
+        .join(
+            ChatHistory,
+            ChatHistory.user_id == User.id,
+        )
+        .group_by(User.id)
+        .order_by(
+            func.max(ChatHistory.timestamp).desc()
+        )
         .limit(5)
         .all()
     )
+
 
     # -------------------------------------------------------
     # RECENT CONVERSATIONS
@@ -156,14 +174,17 @@ def admin_dashboard(
             "active_users": active_users,
         },
 
+
         "recent_users": [
             {
                 "id": user.id,
                 "username": user.username,
                 "role": user.role,
+                "last_activity": last_activity,
             }
-            for user in recent_users
+            for user, last_activity in recent_users
         ],
+
 
         "recent_conversations": [
             {
