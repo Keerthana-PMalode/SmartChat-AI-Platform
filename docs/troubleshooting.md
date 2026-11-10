@@ -29,7 +29,7 @@ docker compose logs -f --tail=100 <service>
 
 The valid Compose service names are `postgres`, `auth`, `file_service`, `rasa_sdk`, `rasa`, and `nginx`. A service name is not necessarily the same as its generated container name.
 
-For local browser checks, the configured Nginx entry point is `http://localhost:8081`. The Compose file also publishes direct host ports for the backend services and PostgreSQL; these direct ports are useful for local diagnosis but should not be exposed to untrusted networks in a production deployment.
+For local browser checks, the configured Nginx entry point is `http://localhost`. The current Compose file does not publish backend or PostgreSQL ports; use `docker compose exec`, internal DNS, or Nginx-proxied paths for diagnosis.
 
 **Do not share** `.env`, full environment dumps, JWTs, passwords, database URLs containing credentials, private keys, `SECRET_KEY`, or `FILE_MASTER_KEY` in logs, screenshots, issue reports, or chat messages.
 
@@ -94,16 +94,13 @@ Replace `auth` with the affected service name. Rebuilds do not normally remove n
 
 ## 3. Services, ports, dependencies, and network
 
-The current Compose configuration publishes these ports:
+The current Compose configuration publishes only this host port:
 
 | Service | Host → container port | Purpose / notes |
 |---|---:|---|
-| `postgres` | `5432:5432` | PostgreSQL; internal clients should use `postgres:5432`. |
-| `auth` | `8000:8000` | Authentication, chat-history, and administration API. |
-| `file_service` | `8001:8001` | File-management API. |
-| `rasa_sdk` | `5055:5055` | Custom action server; configured command is `start --actions actions`. |
-| `rasa` | `5006:5006` | Rasa HTTP API; starts with API enabled, wildcard CORS, and debug mode. |
-| `nginx` | `8081:80` | Static frontend and reverse proxy. |
+| `nginx` | `80:80` | Static frontend and reverse proxy. |
+
+PostgreSQL (`5432`), Auth (`8000`), File Service (`8001`), Rasa SDK (`5055`), and Rasa (`5005`) are internal container ports only; the current Compose file does not publish them to the host.
 
 All services join the `chatbot_network` bridge network. Docker may prefix the network's actual resource name with the Compose project name. Inside this network, use Compose DNS names such as `postgres`, `auth`, `file_service`, `rasa_sdk`, and `rasa`; do not use `localhost` to reach another container. `localhost` inside a container refers to that same container.
 
@@ -197,7 +194,7 @@ docker compose logs --tail=200 postgres
 docker compose exec postgres pg_isready
 ```
 
-From a container on `chatbot_network`, the database host is `postgres` and the internal port is `5432`. Host tools can use `localhost:5432` because Compose publishes that port, provided the host port is available.
+From a container on `chatbot_network`, the database host is `postgres` and the internal port is `5432`. The current Compose file does not publish PostgreSQL to the host.
 
 **Recommended recovery:** wait until PostgreSQL accepts connections; verify the database URL and individual credentials without exposing their values; then retry the dependent request. If credentials were changed after the database was initialized, changing the Compose environment alone does not necessarily change the password stored inside the existing PostgreSQL cluster. Use an authenticated, reviewed database administration procedure to reconcile it.
 
@@ -351,14 +348,14 @@ Check whether the conversation record exists, whether message records are associ
 
 ### Upload fails or file is missing after container recreation
 
-The Compose file bind-mounts the host directory `./file_service/uploads` to `/app/uploads` in `file_service`. It is not a named Docker volume.
+The Compose file mounts the named volume `chatbot-project_file_uploads` at `/app/uploads` in `file_service`; it is not a host-directory bind mount.
 
 **Diagnostics:**
 
 ```bash
 docker compose ps file_service
 docker compose logs --tail=200 file_service
-ls -la ./file_service/uploads
+docker volume inspect chatbot-project_file_uploads\ndocker compose exec file_service ls -la /app/uploads
 ```
 
 Use the appropriate directory-listing command for the host OS. Check host directory permissions, available disk space, file metadata in the database, and the service's storage path configuration.
@@ -459,7 +456,7 @@ Inspect browser console errors, the response JSON shape, and the dashboard/analy
 
 ### Frontend or login page does not load
 
-The current Compose configuration mounts `./frontend` read-only at `/usr/share/nginx/html` and mounts `./nginx/nginx.conf` as the default Nginx configuration. The configured host entry point is `http://localhost:8081`.
+The current Compose configuration mounts `./frontend` read-only at `/usr/share/nginx/html` and mounts `./nginx/nginx.conf` as the default Nginx configuration. The configured host entry point is `http://localhost`.
 
 **Diagnostics:**
 
@@ -472,7 +469,7 @@ Check that the expected frontend files exist under `frontend/` and that the Ngin
 
 ### API returns 404 or 502 through Nginx
 
-The existing Nginx configuration routes `/auth/` to `auth:8000`, `/rasa/` to `rasa:5006`, and `/files/` to `file_service:8001`. Verify exact prefix and `proxy_pass` behavior in `nginx/nginx.conf`; prefix stripping and application root paths must agree.
+The existing Nginx configuration routes `/auth/` to `auth:8000`, `/rasa/` to `rasa:5005`, and `/files/` to `file_service:8001`. Verify exact prefix and `proxy_pass` behavior in `nginx/nginx.conf`; prefix stripping and application root paths must agree.
 
 - `404` often indicates a wrong path, prefix mismatch, or missing route.
 - `502` often indicates the upstream service is stopped, not ready, or unreachable from Nginx.
@@ -481,7 +478,7 @@ Check Nginx logs and the corresponding upstream service logs. Test the public Ng
 
 ### Browser reports a CORS error
 
-A CORS message may indicate an origin mismatch or may mask a failed/incorrect API request. The current Auth Service source has an allowlist for `http://localhost:8081`; verify the current middleware before changing it. Rasa is started with `--cors "*"` in the current Compose command.
+A CORS message may indicate an origin mismatch or may mask a failed/incorrect API request. The current Auth Service source has an allowlist for `http://localhost`; verify the current middleware before changing it. Rasa is started with `--cors "*"` in the current Compose command.
 
 **Recommended recovery:** prefer same-origin frontend requests through Nginx where supported. For another development origin, update the appropriate allowlist deliberately. Do not use wildcard CORS with credentials as a shortcut. Review the Rasa wildcard CORS and debug configuration before production deployment.
 
@@ -493,10 +490,10 @@ The documented frontend token key is `authToken`. If it is absent or invalid, us
 
 ### Rasa starts but does not respond to chat requests
 
-The current Rasa container is built from `./rasa`, mounts `./rasa` at `/app`, and mounts external volume `chatbot-project_rasa_models` at `/app/models`. It runs with this command configuration:
+The current Rasa container is built from `./rasa`, mounts the external volume `chatbot-project_rasa_models` at `/app/models`. It runs with this command configuration:
 
 ```text
-run --enable-api --cors "*" --debug --endpoints endpoints.yml -i 0.0.0.0 -p 5006
+run --enable-api --cors "*" --debug --endpoints endpoints.yml -i 0.0.0.0 -p 5005
 ```
 
 **Diagnostics:**
@@ -511,7 +508,7 @@ Check that the expected model is present in the mounted model directory and that
 
 ### Custom action server is unavailable
 
-The `rasa_sdk` service is built from `./rasa_sdk`, mounts `./rasa_sdk/actions` at `/app/actions`, and runs `start --actions actions` on container port `5055` (published as host port `5055`). Rasa depends on `rasa_sdk`, but Compose does not wait for the action server to be ready.
+The `rasa_sdk` service is built from `./rasa_sdk`, runs `start --actions actions` on internal container port `5055`, and does not publish that port to the host. Rasa depends on `rasa_sdk`, but Compose does not wait for the action server to be ready.
 
 **Diagnostics:**
 
@@ -537,15 +534,15 @@ Update the relevant Rasa domain, NLU, story, or rule files and the existing `ras
 |---|---|---|
 | `chatbot-project_postgres_data` | External named Docker volume | PostgreSQL data at `/var/lib/postgresql/data`. |
 | `chatbot-project_rasa_models` | External named Docker volume | Rasa models at `/app/models`. |
-| `./file_service/uploads` | Host bind mount | File Service storage at `/app/uploads`. |
-| `./auth_service` | Host bind mount | Mounted at `/app` in Auth Service for development/source access. |
-| `./rasa_sdk/actions` | Host bind mount | Mounted at `/app/actions` in Rasa SDK. |
-| `./rasa` | Host bind mount | Mounted at `/app` in Rasa. |
+| `chatbot-project_file_uploads` | Named Docker volume | File Service storage at `/app/uploads`. |
+| 
+| 
+| 
 | `./frontend` | Read-only host bind mount | Nginx document root `/usr/share/nginx/html`. |
 | `./nginx/nginx.conf` | Read-only host file mount | Nginx virtual-host configuration. |
 | `./postgres/init.sql`, `./postgres/seed.sql` | Read-only host file mounts | PostgreSQL first-initialization scripts. |
 
-The two named volumes are declared `external: true`; they must already exist before `docker compose up`. Do not assume Compose will create them. The actual `chatbot_network` Docker resource name may include a Compose project prefix; that does not change the explicit external volume names.
+The PostgreSQL and Rasa model volumes are declared `external: true` and must exist before `docker compose up`. Compose manages the `chatbot-project_file_uploads` named volume. The actual `chatbot_network` Docker resource name may include a Compose project prefix; that does not change the explicit external volume names.
 
 **Safe inspection:**
 
@@ -563,7 +560,7 @@ If an expected external volume is missing, first confirm the active Compose proj
 A database dump alone is insufficient to restore encrypted file functionality. A recovery set should include, as applicable:
 
 - PostgreSQL database backup/metadata;
-- the matching encrypted objects from `file_service/uploads/`;
+- the matching encrypted objects from the `chatbot-project_file_uploads` volume;
 - the correct `FILE_MASTER_KEY` and any relevant key-version/rotation information, stored securely;
 - application configuration and migration/source revision information;
 - the Rasa model volume if preserving trained model state is required.
@@ -583,7 +580,7 @@ Test restoration in a separate environment first:
 5. Verify representative file downloads/decryption, permissions, share links, chat history, and audit records.
 6. Confirm Rasa model availability if that volume is part of the recovery scope.
 
-**Destructive operations:** `docker compose down -v`, `docker volume rm`, deleting `file_service/uploads/`, manually clearing `/var/lib/postgresql/data`, or initializing PostgreSQL against an empty data directory can cause permanent data loss. Replacing `FILE_MASTER_KEY` can make existing files undecryptable. Do not run these operations unless the environment is confirmed disposable or a verified, restorable backup and explicit recovery plan exist.
+**Destructive operations:** `docker compose down -v`, `docker volume rm`, deleting the `chatbot-project_file_uploads` volume, manually clearing `/var/lib/postgresql/data`, or initializing PostgreSQL against an empty data directory can cause permanent data loss. Replacing `FILE_MASTER_KEY` can make existing files undecryptable. Do not run these operations unless the environment is confirmed disposable or a verified, restorable backup and explicit recovery plan exist.
 
 ## 16. Safe recovery checklist
 
@@ -608,10 +605,40 @@ Before committing a troubleshooting fix, verify that:
 - All eight `.env.example` variables are documented and configured where required.
 - Internal database URLs use `postgres:5432`, not container-local `localhost`.
 - `chatbot-project_postgres_data` and `chatbot-project_rasa_models` are identified as pre-existing external volumes.
-- `./file_service/uploads` is correctly identified as a host bind mount.
+- `chatbot-project_file_uploads` is correctly identified as a named Docker volume.
 - PostgreSQL initialization scripts are described as first-initialization scripts, not recurring migrations.
 - `depends_on` is documented as ordering, not readiness; no Compose health checks are currently configured.
 - The Rasa command, model mount, action-server command, and service dependencies match the current configuration.
 - Debug mode and wildcard Rasa CORS are flagged for production review.
 - Destructive commands carry explicit data-loss warnings.
 - Unverified application details are checked against source before being treated as guaranteed behavior.
+
+## 20. Troubleshooting the latest authentication, API-docs, and Compose changes
+
+### Auth Service exits because `SECRET_KEY` is invalid
+
+The Auth Service now fails closed when `SECRET_KEY` is absent or shorter than 32 characters. Configure a high-entropy value of at least 32 characters in `.env` and ensure dependent JWT validators use the same value. Recreate/restart the affected containers after changing environment configuration. Do not restore a fallback such as `secret`.
+
+### Protected endpoint returns `401 Authentication required`
+
+The shared Bearer dependency now handles absent credentials explicitly. Confirm the browser sends `Authorization: Bearer <token>` and that the token is present under the frontend's expected storage key. A missing token is different from an invalid/expired token. Do not bypass the dependency to make a request succeed.
+
+### Admin endpoint returns `403` despite a browser role value
+
+The backend loads the current user from PostgreSQL and checks the stored role. A manually edited `localStorage.role` value does not grant authorization. Verify the persisted `users.role`, sign in again after legitimate role changes, and use a valid admin account. The final administrator cannot be demoted; an attempted demotion returns `400 Cannot remove the last administrator`.
+
+### File Service Swagger UI is blank or OpenAPI returns 404
+
+Use `http://localhost/files/docs` and `http://localhost/files/openapi.json`. The File Service's own routes are `/docs` and `/openapi.json`; Nginx supplies the `/files` prefix. Inspect `nginx/nginx.conf`, File Service logs, and the OpenAPI URL configured by the custom Swagger handler. Do not assume the old direct `http://localhost:8001/docs` URL is available: port `8001` is no longer published.
+
+### Backend service cannot be reached through a host port
+
+The current Compose file publishes only Nginx on host port `80`. Ports `8000`, `8001`, `5005`, `5055`, and `5432` are internal container ports. Use `http://localhost` for browser traffic, Nginx's configured prefixed routes, or `docker compose exec` for internal diagnostics. From one container to another, use the Compose DNS name such as `postgres`, not `localhost`.
+
+### Uploaded files appear missing after a Compose change
+
+Uploads are now stored in named volume `chatbot-project_file_uploads` at `/app/uploads`. The previous `./file_service/uploads` bind-mounted directory is no longer the active storage mount in the updated Compose file. Inspect the named volume and container mount before copying, deleting, or migrating data. If moving from the old bind mount, plan and verify a one-time copy of encrypted objects; preserve matching database metadata and the original `FILE_MASTER_KEY`.
+
+### Source edits do not appear in running containers
+
+Auth, Rasa, and Rasa SDK no longer mount their source directories into the running containers. Rebuild the relevant image after changing source code, for example `docker compose up --build -d auth rasa rasa_sdk`. The Rasa model directory remains a persistent volume and is separate from the Rasa source image.

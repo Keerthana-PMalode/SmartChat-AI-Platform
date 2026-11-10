@@ -25,7 +25,7 @@ SmartChat AI Platform combines a browser-based frontend, backend APIs, conversat
 ```
                           Browser
                              |
-                             | HTTP :8081
+                             | HTTP :80
                              v
                       +--------------+
                       |    Nginx     |
@@ -38,7 +38,7 @@ SmartChat AI Platform combines a browser-based frontend, backend APIs, conversat
              v               v                v
       +-------------+  +-------------+  +-------------+
       | Auth Service|  | Rasa Server |  | File Service|
-      | FastAPI     |  | :5006       |  | :8001       |
+      | FastAPI     |  | :5005       |  | :8001       |
       | :8000       |  +------+------+  +------+------+
       +------+------+         |                 |
              |                v                 |
@@ -58,7 +58,7 @@ SmartChat AI Platform combines a browser-based frontend, backend APIs, conversat
   Persistent storage:
     PostgreSQL data       -> chatbot-project_postgres_data
     Rasa model artifacts  -> chatbot-project_rasa_models
-    Encrypted file data   -> ./file_service/uploads/
+    Encrypted file data   -> chatbot-project_file_uploads
 ```
 
 The diagram represents the principal services and storage relationships. Actual database access depends on each component's implementation and configuration.
@@ -72,7 +72,7 @@ The current `docker-compose.yml` defines six services.
 | `nginx`        | `nginx:latest`              | Serves the static frontend and routes browser API requests                                   | `nginx:80`          |
 | `auth`         | `./auth_service/Dockerfile` | FastAPI authentication and application APIs, including user and administrative functionality | `auth:8000`         |
 | `file_service` | `./file_service/Dockerfile` | File upload/download, encrypted file storage, and file-related operations                    | `file_service:8001` |
-| `rasa`         | `./rasa/Dockerfile`         | Conversational AI server and HTTP API                                                        | `rasa:5006`         |
+| `rasa`         | `./rasa/Dockerfile`         | Conversational AI server and HTTP API                                                        | `rasa:5005`         |
 | `rasa_sdk`     | `./rasa_sdk/Dockerfile`     | Custom Rasa action server                                                                    | `rasa_sdk:5055`     |
 | `postgres`     | `postgres:16`               | Relational database                                                                          | `postgres:5432`     |
 
@@ -183,7 +183,7 @@ Security requirement: `.env` contains secrets and must not be committed to Git. 
 
 The Docker deployment does not require a local `.venv/` directory. Python virtual environments, `__pycache__/`, and other runtime-generated files are development artifacts rather than prerequisites for starting the containers.
 
-The `file_service/uploads/` directory is runtime storage. Uploaded files must not be committed to Git.
+The named Docker volume `chatbot-project_file_uploads`, mounted at `/app/uploads`, is runtime storage. Uploaded files must not be committed to Git.
 
 ## 5. Environment Configuration and Secrets
 
@@ -259,7 +259,7 @@ Uploaded file
      v
 Encrypted file contents
      |
-     +----------------------> file_service/uploads/
+     +----------------------> chatbot-project_file_uploads
      |
      v
 File encryption key
@@ -289,13 +289,13 @@ Before starting the application, prepare the persistent volumes and upload direc
 
 ### 6.1 Create the external Docker volumes
 
-The Compose file declares two external volumes:
+The Compose file declares two external volumes and one Compose-managed named volume:
 
 * `chatbot-project_postgres_data`
 
-* `chatbot-project_rasa_models`
+* `chatbot-project_rasa_models`\n* `chatbot-project_file_uploads` (Compose-managed named volume mounted at `/app/uploads`)
 
-Because these are marked `external: true`, Docker Compose expects them to exist already.
+The PostgreSQL and Rasa model volumes are marked `external: true` and must already exist. The File Service upload volume is a named volume created by Compose if absent.
 
 Create them:
 
@@ -317,27 +317,27 @@ docker volume ls
 | Volume                          | Container mount            | Purpose                             |
 | ------------------------------- | -------------------------- | ----------------------------------- |
 | `chatbot-project_postgres_data` | `/var/lib/postgresql/data` | Persistent PostgreSQL database data |
-| `chatbot-project_rasa_models`   | `/app/models`              | Persistent Rasa model artifacts     |
+| `chatbot-project_rasa_models`   | `/app/models`              | Persistent Rasa model artifacts     |\n| `chatbot-project_file_uploads` | `/app/uploads` | Encrypted uploaded file contents |
 
 > Data-loss warning: Do not delete these volumes during routine troubleshooting, restarting, or updating. They contain persistent application data and model artifacts. Destructive storage operations should only be considered deliberately, with verified backups and a clear understanding of their consequences.
 
 ### 6.2 Prepare File Service storage
 
-The File Service uses a host-directory bind mount:
+The File Service uses a named Docker volume:
 
 ```
-Host:      file_service/uploads/
+Host:      chatbot-project_file_uploads
 Container: /app/uploads
 ```
 
-Ensure the directory exists.
+Ensure the named volume exists and is mounted.
 
 Linux/macOS:
 
 Bash
 
 ```
-mkdir -p file_service/uploads
+docker volume inspect chatbot-project_file_uploads
 ```
 
 Windows PowerShell:
@@ -345,10 +345,10 @@ Windows PowerShell:
 PowerShell
 
 ```
-New-Item -ItemType Directory -Force -Path "file_service/uploads"
+docker volume inspect chatbot-project_file_uploads
 ```
 
-Confirm that Docker can access the directory and that the container has suitable read/write permissions.
+Confirm that Docker can mount the volume and that the File Service container has suitable read/write permissions.
 
 Encrypted file contents reside in this directory, while related metadata and wrapped encryption keys are stored in PostgreSQL. Preserve both locations during backup, restoration, and migration.
 
@@ -358,7 +358,7 @@ Encrypted file contents reside in this directory, while related metadata and wra
 | ------------------------ | ----------------------------------------------- | ---------------------------------------------------- |
 | PostgreSQL database      | External volume `chatbot-project_postgres_data` | Yes                                                  |
 | Rasa models              | External volume `chatbot-project_rasa_models`   | Preserve according to the model recovery/update plan |
-| Encrypted uploaded files | `file_service/uploads/` on the host             | Yes                                                  |
+| Encrypted uploaded files | Named volume `chatbot-project_file_uploads`     | Yes                                                  |
 | Master encryption key    | Secret configuration/recovery storage           | Yes                                                  |
 | Deployment configuration | `.env` and other relevant configuration files   | Preserve securely                                    |
 
@@ -439,7 +439,7 @@ Before starting, confirm that:
 
 * Both external Docker volumes have been created.
 
-* `file_service/uploads/` exists and is accessible to Docker.
+* `chatbot-project_file_uploads` exists and is accessible to Docker.
 
 ### 9.2 Start in the foreground
 
@@ -479,7 +479,7 @@ For a local or production-like deployment, detached mode is convenient after ini
 
 4. Create both external Docker volumes.
 
-5. Ensure `file_service/uploads/` exists.
+5. Ensure `chatbot-project_file_uploads` exists.
 
 6. Build and start the services.
 
@@ -570,9 +570,9 @@ Press `Ctrl+C` to stop following logs. This exits the log-following command; it 
 
 The normal browser-facing entry point is:
 
-* Main frontend: `http://localhost:8081`
+* Main frontend: `http://localhost`
 
-* Login page: `http://localhost:8081/login.html`
+* Login page: `http://localhost/login.html`
 
 Nginx serves the frontend files from `frontend/` and loads its routing configuration from `nginx/nginx.conf`.
 
@@ -584,37 +584,31 @@ The documented routing structure is:
 | ------------ | --------------------- | ----------------------------------------- |
 | `/`          | Nginx static frontend | Frontend pages and assets                 |
 | `/auth/*`    | `auth:8000`           | Authentication and application/admin APIs |
-| `/rasa/*`    | `rasa:5006`           | Rasa API                                  |
+| `/rasa/*`    | `rasa:5005`           | Rasa API                                  |
 | `/files/*`   | `file_service:8001`   | File-management API                       |
 
 Nginx and the backend containers communicate over `chatbot_network`. Refer to the repository's `nginx/nginx.conf` for the exact routing and proxy configuration; this guide does not assume additional routes beyond the documented paths.
 
 ### 11.3 Published host ports
 
-The current Compose configuration publishes the following ports:
+The current Compose configuration publishes only Nginx:
 
-| Host port | Service                    | Intended use                    |
-| --------- | -------------------------- | ------------------------------- |
-| `8081`    | Nginx, container port `80` | Normal browser access           |
-| `5432`    | PostgreSQL                 | Development and troubleshooting |
-| `8000`    | Auth Service               | Development and troubleshooting |
-| `8001`    | File Service               | Development and troubleshooting |
-| `5055`    | Rasa SDK                   | Development and troubleshooting |
-| `5006`    | Rasa server                | Development and troubleshooting |
+| Host port | Service | Intended use |
+|---|---|---|
+| `80` | Nginx, container port `80` | Browser access |
 
-The normal browser-facing port is `8081`. The other ports are published by the current Compose configuration but are not required for ordinary browser access through Nginx.
+Auth (`8000`), File Service (`8001`), Rasa SDK (`5055`), Rasa (`5005`), and PostgreSQL (`5432`) are internal Compose-network ports and are not published to the host.
 
-Useful direct development/troubleshooting URLs include:
+Useful API documentation URLs:
 
-* Auth Service API documentation: `http://localhost:8000/docs`
+* Auth Service docs are served internally at `/docs` on `auth:8000`; the current Nginx configuration does not expose this route.
+* File Service Swagger UI: `http://localhost/files/docs`.
+* File Service OpenAPI document: `http://localhost/files/openapi.json`.
+* File Service health check: `http://localhost/files/health`.
 
-* File Service API documentation: `http://localhost:8001/docs`
+Rasa is internal at `rasa:5005`; it is not host-published.
 
-* Rasa server root: `http://localhost:5006/`
-
-These URLs are not a substitute for checking the actual service behavior, and this guide does not assume that the Rasa root path is a dedicated health-check endpoint.
-
-> Security warning: Published Docker ports may be accessible from other hosts depending on the host network, Docker configuration, firewall, and security-group rules. Restrict access to backend ports that do not need to be reachable externally.
+> Security note: Nginx is the sole host-published application entry point in this Compose configuration. Production deployments still require TLS, firewall review, secret management, and suitable operational controls.
 
 ## 12. Application Smoke Testing
 
@@ -622,7 +616,7 @@ After startup and migration, verify the application through its frontend and exi
 
 ### 12.1 Basic verification checklist
 
-* Nginx loads the frontend at `http://localhost:8081`.
+* Nginx loads the frontend at `http://localhost`.
 
 * The login page loads at `/login.html`.
 
@@ -638,7 +632,7 @@ After startup and migration, verify the application through its frontend and exi
 
 * File upload succeeds for an authorized user.
 
-* Uploaded file contents are stored under `file_service/uploads/`.
+* Uploaded file contents are stored under `chatbot-project_file_uploads`.
 
 * The stored uploaded-file contents are encrypted.
 
@@ -696,7 +690,7 @@ The platform uses JWT authentication for protected application functionality. De
 
 ### 13.2 Current versus recommended exposure
 
-The current Compose configuration publishes all six host ports listed in Section 11.3. For normal browser usage, only the Nginx entry point is needed.
+The current Compose configuration publishes only Nginx on host port `80`. Backend and database ports remain internal to `chatbot_network`.
 
 For an internet-facing deployment, prefer Nginx as the public-facing gateway and restrict access to PostgreSQL, Auth Service, File Service, Rasa SDK, and Rasa server ports unless a specific operational requirement justifies exposure.
 
@@ -784,7 +778,7 @@ A complete recovery strategy must account for the database, encrypted file conte
 | Component                 | Location or source                      | Why it matters                                                               |
 | ------------------------- | --------------------------------------- | ---------------------------------------------------------------------------- |
 | PostgreSQL data           | `chatbot-project_postgres_data`         | Contains application records, file metadata, and wrapped encryption-key data |
-| Encrypted uploaded files  | `file_service/uploads/`                 | Contains the physical encrypted file contents                                |
+| Encrypted uploaded files  | `chatbot-project_file_uploads`          | Contains the physical encrypted file contents                                |
 | `FILE_MASTER_KEY`         | Protected secret/recovery storage       | Required to unwrap stored file-encryption keys                               |
 | Environment configuration | `.env` and other relevant configuration | Required to reproduce the intended deployment securely                       |
 | Rasa model artifacts      | `chatbot-project_rasa_models`           | Preserve when required by the model recovery and deployment plan             |
@@ -952,9 +946,9 @@ Then inspect the service associated with the failure.
 | Alembic migration fails                        | Inspect `docker compose logs file_service`. Confirm PostgreSQL is reachable and that the database URL is correct. Review the migration error before retrying `docker compose exec file_service alembic upgrade head`. Do not delete the database volume to bypass a migration problem. |
 | Nginx returns `502 Bad Gateway`                | Inspect Nginx, Auth Service, Rasa, and File Service logs. Check service names, `chatbot_network`, container startup, and whether the upstream services have finished initializing.                                                                                                     |
 | Rasa does not respond                          | Inspect `docker compose logs rasa` and `docker compose logs rasa_sdk`. Check model availability in the Rasa model volume, review `rasa/endpoints.yml`, and verify that the SDK and its dependencies have started.                                                                      |
-| File upload or download fails                  | Inspect File Service logs. Confirm `file_service/uploads/` exists and is writable, database connectivity works, authorization is correct, and `FILE_MASTER_KEY` is configured properly.                                                                                                |
+| File upload or download fails                  | Inspect File Service logs. Confirm `chatbot-project_file_uploads` exists and is writable, database connectivity works, authorization is correct, and `FILE_MASTER_KEY` is configured properly.                                                                                                |
 | Existing files cannot be decrypted             | Verify that the original `FILE_MASTER_KEY` is being used. Changing it may make existing wrapped keys unusable unless a supported migration has been performed.                                                                                                                         |
-| Frontend loads but API calls fail              | Check the browser developer console, Nginx routing, backend logs, JWT authentication, and use of `/auth`, `/rasa`, and `/files`. Confirm that the browser is accessing Nginx through port `8081`.                                                                                      |
+| Frontend loads but API calls fail              | Check the browser developer console, Nginx routing, backend logs, JWT authentication, and use of `/auth`, `/rasa`, and `/files`. Confirm that the browser is accessing Nginx through port `80`.                                                                                      |
 | API fails shortly after startup                | Check whether a dependency is still initializing. `depends_on` controls startup order but does not necessarily guarantee readiness. Inspect logs and retry after the dependency is available.                                                                                          |
 
 ### 18.1 File encryption key migration utilities
@@ -997,7 +991,7 @@ Use this checklist before considering a deployment validated.
 
 - [ ] `chatbot-project_rasa_models` exists.
 
-- [ ] `file_service/uploads/` exists and is accessible to Docker.
+- [ ] `chatbot-project_file_uploads` exists and is accessible to Docker.
 
 - [ ] PostgreSQL initialization behavior is understood.
 
@@ -1015,7 +1009,7 @@ Use this checklist before considering a deployment validated.
 
 - [ ] Service logs have been reviewed.
 
-- [ ] Nginx is accessible on port `8081`.
+- [ ] Nginx is accessible on port `80`.
 
 - [ ] Login page loads and authentication works.
 
@@ -1054,3 +1048,15 @@ Use this checklist before considering a deployment validated.
 - [ ] Backup recovery has been tested in a controlled environment.
 
 Deployment principle: Preserve persistent data, protect the encryption key, review migrations deliberately, and verify the complete application through Nginx and its actual functionality. A successful container startup is only the first step toward a reliable deployment.
+
+
+### 6.4 Migrating from the previous upload bind mount
+
+The updated Compose file no longer mounts `./file_service/uploads`; it mounts `chatbot-project_file_uploads` instead. If an existing deployment used the old host directory, its encrypted objects will not automatically appear in the new named volume. Before switching:
+1. Stop writes to the File Service and take a database backup.
+2. Back up the old `file_service/uploads/` directory and preserve the original `FILE_MASTER_KEY`.
+3. Start or create the named volume, then copy the encrypted objects while preserving filenames and directory structure.
+4. Start the updated File Service and verify representative file metadata, authorized downloads, decryption, and share-link behavior.
+5. Retain the old backup until the restored volume and database have been verified.
+
+Do not delete the old directory or volume as part of the migration until recovery has been tested.

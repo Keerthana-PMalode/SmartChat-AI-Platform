@@ -11,7 +11,7 @@ The supplied project files include `rasa/tests/test_stories.yml`. No complete re
 1. Use a disposable development database and development-only secrets.
 2. Confirm `docker compose config` succeeds, then start the stack with the repository's documented Compose workflow.
 3. Confirm containers with `docker compose ps` and inspect service logs.
-4. Use `http://localhost:8081/` for browser-facing checks in the previously documented local setup. Direct API docs may be available at `http://localhost:8000/docs` and `http://localhost:8001/docs` if those ports are published in the current Compose file.
+4. Use `http://localhost/` for browser-facing checks. Backend ports are not published; File Service Swagger UI and OpenAPI are available through Nginx at `http://localhost/files/docs` and `http://localhost/files/openapi.json`.
 5. Prepare at least two normal users (A and B) and one administrator. Use synthetic chat messages and disposable test files.
 6. Verify database initialization and File Service Alembic state before testing persistence-sensitive features.
 
@@ -158,7 +158,7 @@ Never run key-migration scripts against live data without reading their source, 
 - Admin can load the dashboard; normal user receives `403`.
 - Compare total users/conversations/messages to controlled database counts.
 - Confirm `active_users` means distinct users with at least one conversation, not a recent-activity window.
-- Confirm recent users are limited to five and ordered by descending user ID.
+- Confirm recent users are limited to five, ordered by descending latest conversation activity, exclude users without conversations, and include `last_activity`.
 - Confirm recent conversations are limited to five and newest first.
 - Verify the activity payload has seven calendar-day labels and corresponding conversation/message arrays; backend timezone is `Asia/Kolkata`.
 
@@ -233,10 +233,10 @@ The repository's explicit Rasa story regression file is `rasa/tests/test_stories
 1. `docker compose config` parses successfully.
 2. `docker compose ps` shows expected services running.
 3. Review `docker compose logs --tail=200 <service>` for startup/import/configuration failures.
-4. Browser `http://localhost:8081/` loads login page; static files resolve.
+4. Browser `http://localhost/` loads the login page; static files resolve.
 5. Nginx forwards `/auth/`, `/rasa/`, `/files/` to the correct service.
 6. Login/register work and JWT-protected APIs reject missing/invalid tokens.
-7. File Service health route `/health` and database health route `/health/db` respond if accessed directly; note they may not be exposed through Nginx.
+7. File Service health route is available through Nginx at `/files/health`; database health `/health/db` remains an internal service route unless separately proxied.
 8. Upload/download round trip preserves bytes and stored file is encrypted.
 9. Chat history survives container restart using persistent DB storage.
 10. Rasa responds and custom actions reach the SDK.
@@ -256,3 +256,48 @@ The repository's explicit Rasa story regression file is `rasa/tests/test_stories
 - [ ] Alembic migration upgrades a representative database safely.
 - [ ] Nginx routes and frontend module flows remain functional.
 - [ ] Documentation is updated for any API/config/schema behavior changes.
+
+## 18. Regression tests for the latest changes
+
+### Authentication and authorization
+
+- Start Auth Service with `SECRET_KEY` unset; verify startup fails with the configuration error.
+- Start it with a value shorter than 32 characters; verify startup fails.
+- Start it with a generated value of at least 32 characters; verify the service initializes.
+- Call a protected route without an Authorization header; expect `401`, `Authentication required`, and a Bearer challenge header.
+- Test invalid and expired JWTs; expect `401`.
+- Test a valid token whose user no longer exists; expect `401`.
+- Test `require_admin` using a database user with `admin`, `user`, and mixed-case role values; confirm only normalized `admin` passes.
+- Verify frontend local-storage role tampering does not grant admin access.
+
+### Administrator role invariants
+
+- Submit `role: "user"` and `role: "admin"` to the role-update endpoint; verify valid updates and audit logging.
+- Submit any other role value; request validation must reject it.
+- With exactly one administrator, attempt to demote that account; expect `400 Cannot remove the last administrator`.
+- With at least two administrators, demote one; verify the other admin remains and the role-change audit event is recorded.
+
+### Dashboard recent users
+
+Create users with controlled `ChatHistory.timestamp` values, including a user with no chat history. Verify that:
+- only users with conversation activity appear;
+- at most five users are returned;
+- ordering is descending by maximum conversation timestamp, not user ID;
+- each item includes `last_activity` equal to the user's latest conversation timestamp.
+
+### File Service docs and proxy
+
+- Open `GET /files/docs` through Nginx and verify Swagger UI loads.
+- Verify the Swagger UI requests `/files/openapi.json` rather than an unprefixed root document.
+- Fetch `/files/openapi.json` and confirm it returns the File Service OpenAPI schema.
+- Fetch `/files/health` through Nginx and verify the health response.
+- Confirm upload, download, list, delete, and sharing routes still work with their `/files` prefix and Bearer authorization.
+
+### Docker and persistence regression
+
+- Run `docker compose config` and confirm the Compose configuration is valid.
+- Confirm only Nginx is host-published (`80:80`); backend and database ports are internal.
+- Confirm Auth, Rasa, and Rasa SDK do not depend on source bind mounts. Rebuild their images after source changes and verify the updated code is present.
+- Confirm `chatbot-project_file_uploads` is mounted at `/app/uploads` and file bytes persist across container recreation.
+- Confirm the existing external PostgreSQL and Rasa model volumes remain attached and are not removed during tests.
+- Verify the File Service database connection resolves `postgres` inside the Compose network and that the Psycopg 3 dependency is installed in the built image.

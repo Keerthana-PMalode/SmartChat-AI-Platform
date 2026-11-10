@@ -20,6 +20,12 @@ management, administrative dashboards and analytics, and a modular microservice 
 - 📈 Chat and message analytics
 - 👥 User and conversation activity monitoring
 - 📚 Modular frontend and backend architecture
+- 🔒 Internal-only backend service networking through Docker Compose
+- 💾 Persistent Docker volume for encrypted file storage
+- 📦 Containerized deployment without development source-code bind mounts
+- 📖 API documentation access through Nginx reverse proxy
+- 📤 Support for file uploads up to 100 MB
+- 🕒 Recent user activity tracking based on latest conversation timestamps
 
 ---
 
@@ -51,13 +57,13 @@ services over the Docker Compose network.
 ```text
 Browser
    │
-   │ localhost:8081
+   │ http://localhost
    ▼
-Nginx
+Nginx :80
    │
    ├──────────────► Auth Service :8000
    │                    │
-   │                    └──────────► PostgreSQL
+   │                    └──────────► PostgreSQL :5432
    │
    ├──────────────► Rasa :5006
    │                    │
@@ -70,13 +76,34 @@ Nginx
                          │
                          ├──────────► PostgreSQL
                          │
-                         └──────────► Encrypted File Storage
+                         └──────────► Persistent Docker Volume
+                                      (Encrypted File Storage)
 ```
 
 The Auth Service also provides the administrative dashboard and analytics APIs used by the frontend to display application statistics, recent activity, and chat activity.
 
 For detailed service interactions, authentication, database relationships,
 encryption, authorization, and request flows, see Architecture.
+
+### Internal Service Networking
+
+Nginx acts as the primary browser-facing entry point.
+
+Backend services communicate through the internal Docker Compose network.
+The Auth Service and File Service expose their ports internally using Docker
+Compose `expose` configuration rather than publishing those ports directly
+to the host.
+
+This reduces direct host-level access to backend services and centralizes
+normal browser-facing application traffic through Nginx.
+
+The following services communicate internally:
+
+- Auth Service: Port 8000
+- File Service: Port 8001
+- Rasa: Port 5005
+- Rasa SDK: Port 5055
+- PostgreSQL: Port 5432
 
 ---
 
@@ -101,12 +128,12 @@ The admin dashboard provides a centralized overview of application activity.
 
 The dashboard displays:
 
-Total registered users
-Total conversations
-Total messages
-Active users
+- Total registered users
+- Total conversations
+- Total messages
+- Active users
 
-An **active user**    is currently defined as a user who has at least one conversation in the system.
+An **active user** is currently defined as a user who has at least one conversation in the system.
 
 ### Activity overview
 
@@ -120,15 +147,35 @@ Charts are rendered in the frontend using **Chart.js**.
 
 ### Recent activity
 
-The dashboard also provides quick access to:
+The dashboard provides quick access to:
 
-- Five most recently created users
+- Five users with the most recent conversation activity
 - Five most recent conversations
 - Usernames and roles
+- Latest conversation activity timestamps
 - Conversation timestamps
 - Conversation/session identifiers
 
-This provides administrators with a quick overview of recent system activity without navigating to the detailed management pages.
+#### Recent users sorting
+
+Recent users are retrieved by their latest conversation activity. Only users with at least one conversation are included; the five most recently active users are returned with a `last_activity` timestamp.
+
+The dashboard uses SQLAlchemy aggregation with `MAX(ChatHistory.timestamp)`
+to determine each user's most recent conversation timestamp.
+
+Users without conversations are excluded from this list.
+
+The recent users API response includes:
+
+| Field | Description |
+|-------|-------------|
+| `id` | User ID |
+| `username` | Username |
+| `role` | User role |
+| `last_activity` | Timestamp of the user's latest conversation |
+
+This provides administrators with a more meaningful view of recently
+active users rather than simply displaying users in registration order.
 
 ## Chatbot
 
@@ -181,6 +228,34 @@ Date-based analytics use the configured `ANALYTICS_TIMEZONE` to ensure activity 
 - Audit logging
 - Per-user file ownership
 
+### File Storage and Upload Configuration
+
+The File Service supports:
+
+- File uploads up to 100 MB
+- Encrypted file storage
+- Persistent Docker volume-based storage
+- File downloads through Nginx
+- File deletion and sharing operations
+
+Nginx is configured with:
+
+```nginx
+client_max_body_size 100M;
+```
+
+### File Service Health Endpoints
+
+The File Service provides health endpoints for monitoring application availability and database connectivity.
+
+| Endpoint | Description | Accessibility |
+|----------|-------------|---------------|
+| `/` | File Service status | Internal   |
+| `/health` | Application health | Through Nginx at /files/health |
+| `/health/db` | Database connectivity check | Internal to the File Service|
+
+**Note**: The application health endpoint is accessible through the Nginx reverse proxy at http://localhost/files/health. The database health endpoint is currently accessible internally within the File Service container and is not exposed through Nginx.
+
 ---
 
 # Project Structure
@@ -224,7 +299,7 @@ SmartChat-AI-Platform/
 │       ├── login.js            # Login and registration-link behavior
 │       └── register.js         # User registration form behavior
 │
-├── nginx/                     # Nginx reverse proxy configuration
+├── nginx/                     # Nginx reverse proxy and API routing
 │
 ├── postgres/                  # Database initialization and seed scripts
 │
@@ -250,14 +325,19 @@ SmartChat-AI-Platform/
 │
 ├── scripts/                   # Development and database helper scripts
 │
-├── docker-compose.yml         # Docker Compose orchestration
+├── docker-compose.yml         # Docker Compose orchestration and persistent
 ├── .env.example               # Example environment configuration
 ├── .gitignore
 ├── README.md
 └── LICENSE
 ```
 
-**file_service/uploads/** is runtime storage for encrypted uploaded files and is excluded from version control.
+**Persistent storage:** Encrypted uploaded files are maintained in the
+`chatbot-project_file_uploads` Docker volume and are not dependent on
+container filesystem persistence.
+
+The application uses Docker volumes for persistent database, Rasa model,
+and uploaded-file storage.
 
 ---
 
@@ -330,6 +410,27 @@ docker volume create chatbot-project_postgres_data
 docker volume create chatbot-project_rasa_models
 ```
 
+## Persistent Docker Storage
+
+SmartChat uses Docker named volumes to maintain important application data
+across container recreation.
+
+The following persistent volumes are configured:
+
+| Volume | Purpose |
+|--------|---------|
+| `chatbot-project_postgres_data` | PostgreSQL database storage |
+| `chatbot-project_rasa_models` | Trained Rasa models |
+| `chatbot-project_file_uploads` | Encrypted uploaded files |
+
+Create the volumes if they do not already exist:
+
+```bash
+docker volume create chatbot-project_postgres_data
+docker volume create chatbot-project_rasa_models
+docker volume create chatbot-project_file_uploads
+```
+
 Verify them:
 
 ```bash
@@ -350,10 +451,10 @@ The File Service uses Alembic for database migrations.
 docker compose exec file_service alembic upgrade head
 ```
 
-## Verify the Containers
+## Deployment Verification
 
 ```bash
-docker ps
+docker compose ps
 ```
 
 A successful deployment should include containers similar to:
@@ -365,6 +466,58 @@ A successful deployment should include containers similar to:
 - rasa
 - nginx
 
+## Check container logs
+
+```bash
+docker compose logs -f
+```
+
+## Check individual services
+
+```bash
+docker compose logs auth
+docker compose logs file_service
+docker compose logs nginx
+docker compose logs rasa
+docker compose logs rasa_sdk
+docker compose logs postgres
+```
+
+## Check the File Service
+
+Verify application health through the Nginx reverse proxy:
+
+```bash
+curl http://localhost/files/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "healthy"
+}
+```
+
+
+Check database connectivity from inside the File Service container to verify database health:
+
+```bash
+docker compose exec file_service python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8001/health/db').read().decode())"
+```
+
+Expected response:
+
+```json
+{
+  "database": "connected",
+  "result": 1
+}
+```
+
+**Note**: The application health endpoint is accessible through Nginx at `/files/health`. The database health endpoint `/health/db` is currently accessible internally within the File Service container and is not exposed through the 
+`/files/health/db` Nginx route.
+
 ---
 
 ## Application Access
@@ -372,13 +525,7 @@ A successful deployment should include containers similar to:
 The normal browser-facing application is:
 
 ```http
-http://localhost:8081
-```
-
-The login page is:
-
-```http
-http://localhost:8081/login.html
+http://localhost
 ```
 
 Nginx provides the normal browser-facing API routes:
@@ -395,13 +542,12 @@ troubleshooting.
 Typical development endpoints include:
 
 ```http
-http://localhost:8000/docs
-http://localhost:8001/docs
-http://localhost:5006/
+http://localhost/auth/docs
+http://localhost/files/docs
 ```
 
 These direct backend endpoints are intended for development and testing. Normal
-browser application traffic should use Nginx on port 8081.
+browser application traffic should use Nginx on host port 80.
 
 ---
 
@@ -598,3 +744,22 @@ Areas of interest:
 # License
 
 MIT License
+
+## Latest implementation notes
+
+The current Compose configuration exposes Nginx on host port `80` (`http://localhost`). PostgreSQL, Auth Service, File Service, Rasa, and the Rasa SDK retain their internal ports (`5432`, `8000`, `8001`, `5005`, and `5055`) but are not published to the host. Use Nginx routes or `docker compose exec` for diagnostics.
+
+The File Service upload directory is persisted in the named Docker volume `chatbot-project_file_uploads`, mounted at `/app/uploads`. The PostgreSQL data and Rasa model volumes remain external volumes named `chatbot-project_postgres_data` and `chatbot-project_rasa_models`. Runtime source bind mounts for Auth, Rasa, and Rasa SDK were removed; rebuild images after changing their source code.
+
+Auth Service API Documentation: Auth Service Swagger UI is accessible through Nginx at /auth/docs, with its OpenAPI specification available at /auth/openapi.json. The API documentation can be accessed through the browser-facing Nginx entry point without directly publishing the Auth Service port to the host.
+
+File Service API Documentation: File Service Swagger UI is exposed through Nginx at `/files/docs`, with its OpenAPI document at `/files/openapi.json`. 
+
+Authentication hardening and administration safeguards:
+- Auth Service refuses to start unless `SECRET_KEY` is configured and at least 32 characters long.
+- Protected routes handle a missing Bearer credential as `401 Authentication required`; invalid or expired JWTs return `401`.
+- Admin role updates accept only `user` or `admin`, and the final administrator cannot be demoted.
+- The login page uses the role returned in the JWT, not the role selected or stored by the browser, to choose the post-login destination.
+- The dashboard's five recent users are selected by latest conversation timestamp; users with no conversations are excluded and each record includes `last_activity`.
+
+The File Service uses `psycopg[binary]` (Psycopg 3) in its dependency manifest. Its SQLAlchemy default database URL uses the Compose hostname `postgres`, not container-local `localhost`.

@@ -71,7 +71,7 @@ Avoid modifying `.venv` or generated/cache files as part of normal source change
 
 ## 4. Docker-based development workflow
 
-Use the repository's Compose file as the authoritative orchestration contract. In the previously documented configuration, services are named `nginx`, `auth`, `file_service`, `rasa`, `rasa_sdk`, and `postgres`, connected on `chatbot_network`. Nginx serves the app on host port `8081`; direct service ports have been documented as Auth `8000`, File Service `8001`, Rasa `5006`, Rasa SDK `5055`, and PostgreSQL `5432`. Confirm the checked-out Compose file before relying on these mappings.
+Use the repository Compose file as the authoritative orchestration contract. Services are `nginx`, `auth`, `file_service`, `rasa`, `rasa_sdk`, and `postgres`, connected on `chatbot_network`. Nginx is published on host port `80`; internal service ports are Auth `8000`, File Service `8001`, Rasa `5005`, Rasa SDK `5055`, and PostgreSQL `5432`. Only Nginx is host-published.
 
 Typical workflow, if supported by the current Compose file:
 
@@ -82,7 +82,7 @@ docker compose ps
 docker compose logs -f auth file_service rasa rasa_sdk nginx postgres
 ```
 
-Use the browser-facing entry point `http://localhost:8081/` (login page is `/login.html`) when running the documented local stack. Direct FastAPI docs may be available at `http://localhost:8000/docs` and `http://localhost:8001/docs` if those ports are published. Do not assume those direct ports should be exposed in production.
+Use `http://localhost/` (login page `/login.html`) for the local stack. File Service Swagger UI and OpenAPI are proxied at `/files/docs` and `/files/openapi.json`. Auth and File Service ports are not published directly to the host.
 
 `depends_on` orders container startup but does not by itself guarantee that PostgreSQL or another dependency is ready to accept requests. When debugging first boot, inspect the database and dependent service logs instead of assuming startup order means readiness.
 
@@ -105,7 +105,7 @@ Use `.env.example` as a template if present in the working checkout; the uploade
 
 For local work, create the expected `.env` from the actual template and use unique development-only secrets. Never use the source defaults (`SECRET_KEY` falls back to `secret` in the current Python source) as a production secret. Keep `FILE_MASTER_KEY` stable and backed up: losing it can make stored files undecryptable. Rotating it requires a planned key migration, not just changing the environment variable.
 
-If a variable appears unused, inspect its call sites before removing it. The File Service `core/config.py` currently reads `DATABASE_URL` with a local fallback; encryption reads `FILE_MASTER_KEY` directly from the environment. Auth JWT logic reads `SECRET_KEY` directly.
+If a variable appears unused, inspect its call sites before removing it. The File Service `core/config.py` reads `DATABASE_URL` with a Compose-network fallback (`postgres:5432`); encryption reads `FILE_MASTER_KEY` directly from the environment. Auth JWT logic requires `SECRET_KEY` at startup and rejects missing or shorter-than-32-character values.
 
 ## 6. Backend development
 
@@ -297,3 +297,29 @@ At minimum, test each change with:
 - regression tests for adjacent features.
 
 See `docs/testing.md` for scenario-based test cases and `docs/troubleshooting.md` for diagnostics.
+
+## 18. Latest source and Compose changes
+
+The latest Git changes alter the runtime contract in several ways:
+
+- Compose publishes only Nginx as host `80:80`. The service ports remain internal: Auth `8000`, File Service `8001`, Rasa `5005`, Rasa SDK `5055`, PostgreSQL `5432`. Auth and File Service declare `expose`; do not use old direct host URLs such as `localhost:8000` or `localhost:8001`.
+- Nginx is the normal browser entry point at `http://localhost`. The File Service docs are available at `/files/docs` and `/files/openapi.json`; `/files/health` is also proxied.
+- The File Service stores uploads in the named volume `chatbot-project_file_uploads` at `/app/uploads`. Inspect it with `docker volume inspect chatbot-project_file_uploads` and inspect contents from the container with `docker compose exec file_service ls -la /app/uploads`.
+- Auth, Rasa, and Rasa SDK source bind mounts have been removed. After editing their code, rebuild the corresponding image (for example, `docker compose up --build -d auth rasa rasa_sdk`). The Rasa model volume remains mounted at `/app/models`.
+- File Service now declares `psycopg[binary]`, the Psycopg 3 driver, rather than `psycopg2-binary`; its fallback `DATABASE_URL` points to `postgresql://chatbot:chatbot@postgres:5432/chatbot`.
+
+### Authentication and administrator invariants
+
+`SECRET_KEY` is mandatory for Auth Service and must contain at least 32 characters. Missing or short values cause startup failure. Keep it consistent across services that validate Auth-issued JWTs.
+
+The shared auth dependency uses `HTTPBearer(auto_error=False)` so missing credentials are handled explicitly as `401 Authentication required`. `get_current_user` resolves the user from the database, and `require_admin` checks that database user's current role. Do not use frontend/local-storage role values for authorization.
+
+The role-update schema permits only `user` and `admin`. The admin route prevents demoting the last stored administrator and returns `400 Cannot remove the last administrator`. Preserve this invariant when changing user administration.
+
+### Frontend login behavior
+
+`handleLoginSuccess()` stores the JWT and username, decodes the token, validates that a role claim exists, normalizes the role to lowercase, stores it, and returns it. It no longer redirects. `login.js` performs the redirect using this server-issued JWT role (`admin` to `admin.html`, `user` to `chat.html`); unexpected/missing roles clear local storage and fail the login flow. Do not restore client-selected-role redirects.
+
+### Admin dashboard recent users
+
+The backend selects up to five users with chat history, ordered by `MAX(ChatHistory.timestamp)` descending, and returns `last_activity`. Users without conversations are excluded. Update API documentation, UI rendering, and tests together if this response changes.

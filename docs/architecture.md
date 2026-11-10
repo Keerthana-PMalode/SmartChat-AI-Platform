@@ -13,11 +13,11 @@ the private Docker Compose network using service names.
 ```text
                            Browser
                               │
-                              │ HTTP :8081
+                              │ HTTP :80
                               ▼
                     ┌────────────────────┐
                     │       Nginx        │
-                    │ Reverse Proxy      │
+                    │   Reverse Proxy    │
                     │ Frontend Gateway   │
                     └─────────┬──────────┘
                               │
@@ -26,7 +26,7 @@ the private Docker Compose network using service names.
               ▼               ▼                ▼
       ┌──────────────┐ ┌──────────────┐ ┌────────────────┐
       │ Auth Service │ │ Rasa Server  │ │  File Service  │
-      │   :8000      │ │   :5006      │ │     :8001      │
+      │   :8000      │ │   :5005      │ │     :8001      │
       └──────┬───────┘ └──────┬───────┘ └───────┬────────┘
              │                │                 │
              │                ▼                 │
@@ -57,7 +57,7 @@ The platform consists of the following primary services:
 | nginx       | Frontend delivery and reverse proxy | `nginx`             |
 | auth        | Authentication and authorization    | `auth:8000`         |
 | file_service| Secure file management              | `file_service:8001` |
-| rasa        | Conversational AI                   | `rasa:5006`         |
+| rasa        | Conversational AI                   | `rasa:5005`         |
 | rasa_sdk    | Custom Rasa actions                 | `rasa_sdk:5055`     |
 | postgres    | Persistent database                 | `postgres:5432`     |
 
@@ -72,7 +72,7 @@ The browser normally communicates only with Nginx.
 The normal browser-facing endpoint is:
 
 ```http
-http://localhost:8081
+http://localhost
 ```
 
 Nginx routes requests according to their path.
@@ -81,7 +81,7 @@ Nginx routes requests according to their path.
 |---------------|----------------------|------------------------------|
 | `/`           | Nginx                | Frontend static files        |
 | `/auth/*`     | `auth:8000`          | Authentication and user APIs |
-| `/rasa/*`     | `rasa:5006`          | Rasa conversational API      |
+| `/rasa/*`     | `rasa:5005`          | Rasa conversational API      |
 | `/files/*`    | `file_service:8001`  | File-management API          |
 
 The internal Docker addresses are not browser-facing URLs.
@@ -92,10 +92,10 @@ For example:
 Browser
    │
    ▼
-Nginx :8081
+Nginx :80
    │
    ├──► auth:8000
-   ├──► rasa:5006
+   ├──► rasa:5005
    └──► file_service:8001
 ```
 
@@ -118,7 +118,7 @@ The browser therefore has a single application entry point:
 Browser
    │
    ▼
-Nginx :8081
+Nginx :80
    │
    ├──► Frontend files
    ├──► Auth Service
@@ -210,10 +210,10 @@ Browser
    │
    │ /rasa/*
    ▼
-Nginx :8081
+Nginx :80
    │
    ▼
-Rasa :5006
+Rasa :5005
    │
    └──► Rasa SDK :5055
               │
@@ -336,7 +336,7 @@ Browser
    │
    │ /files/*
    ▼
-Nginx :8081
+Nginx :80
    │
    ▼
 File Service :8001
@@ -598,7 +598,7 @@ Encrypted uploaded files are stored separately in File Service runtime
 storage:
 
 ```text
-file_service/uploads/
+chatbot-project_file_uploads (mounted at `/app/uploads`)
 ```
 
 The encrypted files are excluded from version control.
@@ -872,7 +872,7 @@ Admin API
 
 The dashboard reports total users, conversations, and messages. `active_users`
 is the number of distinct users with at least one conversation. It also returns
-at most five recent users and five recent conversations. The activity dataset
+at most five recent users with conversation activity and five recent conversations. Each recent-user record includes `last_activity` (the maximum `ChatHistory.timestamp` for that user). Users without conversations are excluded. The activity dataset
 covers the last seven calendar days and contains separate conversation and
 message counts for each day.
 
@@ -1007,5 +1007,25 @@ logs.
 contexts.
 - **Traceable sharing** — share-link access retains the specific share-link
 identifier used.
-- **Development/production separation** — published backend ports support
+- **Development/production separation** — backend services communicate over the internal Compose network; only Nginx is host-published in the current Compose configuration.
 troubleshooting while normal browser traffic uses Nginx.
+
+## 22. Latest authentication, administration, and runtime configuration changes
+
+The latest implementation tightens the authentication boundary:
+
+- `auth_service/app/core/auth.py` reads `SECRET_KEY` without a weak fallback. Startup fails when the variable is absent or shorter than 32 characters.
+- `get_current_user` and `get_current_session` use `HTTPBearer(auto_error=False)` and explicitly return `401` for missing credentials. Invalid/expired tokens and unresolved users are rejected.
+- `require_admin` checks the current database user's role (normalized to lowercase) and returns `403` for non-admin users. Authorization does not trust a role value supplied by browser storage.
+- `UpdateRoleRequest.role` is restricted to the literals `user` and `admin`. The role-update route prevents demotion of the last remaining administrator with `400 Cannot remove the last administrator`.
+- The Admin Dashboard's recent-user query joins `ChatHistory`, groups by user, orders by `MAX(ChatHistory.timestamp)` descending, limits the result to five, and returns `last_activity`. Users without chat history are intentionally omitted.
+
+## 23. Updated container and storage boundaries
+
+The current `docker-compose.yml` publishes only Nginx as `80:80`. Backend and database ports remain available on `chatbot_network` but are not host-published. Auth and File Service declare their internal ports with `expose`; Rasa, Rasa SDK, and PostgreSQL are accessed by Compose service name and internal port.
+
+Runtime source bind mounts were removed for Auth Service, Rasa, and Rasa SDK. Their code is supplied by the built images, so source changes require rebuilding the corresponding image/container. Rasa continues to mount `chatbot-project_rasa_models` at `/app/models`.
+
+File Service uploads now use the named volume `chatbot-project_file_uploads` mounted at `/app/uploads`, rather than `./file_service/uploads`. PostgreSQL data and Rasa models remain in the external volumes `chatbot-project_postgres_data` and `chatbot-project_rasa_models`.
+
+File Service API documentation is served by its custom Swagger route at `/docs` and OpenAPI JSON at `/openapi.json`; Nginx maps these to `/files/docs` and `/files/openapi.json`. The health route `/health` is also explicitly proxied as `/files/health`.

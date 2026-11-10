@@ -170,7 +170,7 @@ Creates a user from an admin request. Admin only.
 
 #### `PUT /auth/admin/users/{user_id}/role`
 
-Changes a user's role. Admin only.
+Changes a user's role to `user` or `admin`. Admin only. The request schema restricts `role` to these two values. The last remaining administrator cannot be demoted; the API returns `400` with `Cannot remove the last administrator`.
 
 **Path:** `user_id` integer.
 
@@ -335,7 +335,7 @@ Allowed levels are `info`, `warning`, and `error`; `action` is required and `det
 
 ## File management API
 
-The File Service authenticates JWTs independently using the configured `SECRET_KEY`. File ownership and permissions are enforced in the service. Files are encrypted before storage; download endpoints decrypt only after authorization.
+The File Service authenticates JWTs independently using the configured `SECRET_KEY`. Auth Service requires `SECRET_KEY` at startup and rejects values shorter than 32 characters; use the same secret in services that validate the same JWTs. File ownership and permissions are enforced in the service. Files are encrypted before storage; download endpoints decrypt only after authorization.
 
 ### `GET /files` and `GET /files/`
 
@@ -445,3 +445,35 @@ These are direct File Service routes and may not be proxied through Nginx unless
 - `503 Service Unavailable`: non-admin attempts to persist a chat turn during maintenance mode.
 
 For exact Pydantic field constraints and complete response schemas, consult the route and schema modules cited above. Do not infer additional routes from frontend labels or architecture diagrams alone.
+
+## 12. Authentication and role-management behavior added in the latest changes
+
+### Bearer authentication failures
+
+Protected dependencies now explicitly handle missing credentials. Requests without an Authorization Bearer token return `401` with detail `Authentication required` and a `WWW-Authenticate: Bearer` header. Invalid or expired tokens return `401 Invalid or expired token`. Missing user/session claims and users that no longer exist are also rejected with `401`.
+
+`require_admin` evaluates the current user's role loaded from the database and normalizes it to lowercase before comparison. A non-admin receives `403 Admin access required`. The browser's local-storage role is not an authorization source.
+
+### `PUT /auth/admin/users/{user_id}/role`
+
+The request schema now restricts `role` to exactly `user` or `admin`. Attempting to demote the last remaining administrator returns `400` with detail `Cannot remove the last administrator`. The check counts users whose stored role is exactly `admin`; the update is otherwise processed through the existing role-update and audit-log flow.
+
+### Dashboard recent-user fields
+
+`GET /auth/admin/dashboard` returns up to five recent users who have at least one `ChatHistory` record. They are ordered by the maximum conversation timestamp in descending order. Each item contains `id`, `username`, `role`, and `last_activity`. Users with no conversations are excluded. This replaces the previous user-ID ordering.
+
+## 13. File Service API documentation endpoints
+
+The File Service disables FastAPI's default automatic docs route and provides a custom Swagger UI page. Through the current Nginx configuration use:
+
+- `GET /files/docs` — Swagger UI; the UI is configured to retain authorization between interactions.
+- `GET /files/openapi.json` — OpenAPI specification.
+- `GET /files/health` — proxied File Service health response.
+
+The File Service application itself serves these at `/docs`, `/openapi.json`, and `/health` respectively. Nginx explicitly maps the prefixed browser paths to the corresponding service paths. The File Service OpenAPI document is configured at `/openapi.json`, and its Swagger UI points to `/files/openapi.json` so it works through the reverse proxy.
+
+## 14. Configuration and dependency notes
+
+Auth Service requires `SECRET_KEY` at process startup and rejects values shorter than 32 characters. There is no fallback secret. Services that independently validate Auth-issued JWTs must use the same signing secret.
+
+The File Service's default SQLAlchemy URL now uses `postgres:5432` as the database host for Compose networking. Its requirements replace `psycopg2-binary` with `psycopg[binary]` (Psycopg 3). Confirm the installed driver and URL compatibility when operating outside the supplied container configuration.
