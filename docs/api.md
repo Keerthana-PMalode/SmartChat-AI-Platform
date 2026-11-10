@@ -2,7 +2,7 @@
 
 This reference documents routes verified in the supplied Auth Service and File Service source. Browser-facing URLs include the Nginx prefixes. The Auth Service internally defines routes without `/auth`; Nginx maps `/auth/...` to the Auth Service. File Service routes are under `/files`. Rasa is exposed through `/rasa/`.
 
-> **Source scope:** The supplied ZIP contains the application source and existing `docs/api.md`, but does not contain `docker-compose.yml`, `.env.example`, or a root `README.md`. The external service ports and proxy paths below also use project context supplied earlier. Treat any deployment-specific URL/port as configurable if your local Compose file differs.
+**Source scope**: This API reference is based on the supplied Auth Service and File Service application source code. The supplied ZIP includes the application source and the existing docs/api.md, but does not include docker-compose.yml, .env.example, or a root README.md. Therefore, deployment-specific details such as external service ports, Nginx proxy mappings, and container networking are based partly on project context provided separately and have not been independently verified against the deployment configuration. Verify these details against your actual deployment files before using the documented URLs and ports.
 
 ## Conventions
 
